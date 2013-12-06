@@ -202,6 +202,18 @@ class PCSDriver(driver.ComputeDriver):
         LOG.info("get_available_resource")
         return self.host_state.get_host_stats(refresh=True)
 
+    def reboot(self, context, instance, network_info, reboot_type='SOFT',
+            block_device_info=None, bad_volumes_callback=None):
+        LOG.info("reboot %s" % instance['name'])
+        sdk_ve = self._get_ve_by_name(instance['name'])
+
+        if reboot_type == 'SOFT':
+            sdk_ve.restart().wait()
+        else:
+            sdk_ve.stop_ex(prlconsts.PSM_ACPI, prlconsts.PSF_FORCE).wait()
+            sdk_ve.start().wait()
+        self.plug_vifs(instance, network_info)
+
 class HostState(object):
     def __init__(self, driver):
         super(HostState, self).__init__()
