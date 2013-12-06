@@ -1,15 +1,20 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 
 import socket
+import os
+import tempfile
 
 from oslo.config import cfg
 
+from nova.image import glance
 from nova.network import linux_net
 from nova import exception
 from nova.compute import power_state
 from nova.openstack.common.gettextutils import _
+from nova.openstack.common.processutils import ProcessExecutionError
 from nova.openstack.common import log as logging
 from nova.virt import driver
+from nova.virt import images
 from nova.virt import firewall
 from nova import utils
 
@@ -26,9 +31,6 @@ pcs_opts = [
 
     cfg.StrOpt('pcs_password',
                 help = 'PCS SDK password'),
-
-    cfg.StrOpt('pcs_ostemplate',
-                help = 'Temporary option to specify ostemplate'),
     ]
 
 CONF = cfg.CONF
@@ -141,12 +143,15 @@ class PCSDriver(driver.ComputeDriver):
         LOG.info("network_info=%r" % network_info)
         LOG.info("block_device_info=%r" % block_device_info)
 
+        tmpl = PCSTemplate(context, instance['image_ref'],
+                        instance['user_id'], instance['project_id'])
+
         sdk_ve = self._psrv.get_default_vm_config(
                         prlsdkapi.consts.PVT_CT, '', 0, 0).wait()[0]
         sdk_ve.set_uuid(instance['uuid'])
         sdk_ve.set_name(instance['name'])
         sdk_ve.set_vm_type(prlsdkapi.consts.PVT_CT)
-        sdk_ve.set_os_template(CONF.pcs_ostemplate)
+        sdk_ve.set_os_template(tmpl.get_name())
         sdk_ve.reg('', True).wait()
 
         sdk_ve.start_ex(prlconsts.PSM_VM_START,
@@ -175,8 +180,6 @@ class PCSDriver(driver.ComputeDriver):
         sdk_ve.delete().wait()
 
         self.unplug_vifs(instance, network_info)
-        self.firewall_driver.unfilter_instance(instance,
-                                network_info=network_info)
 
     def get_info(self, instance):
         LOG.info("get_info: %s %s" % (instance['id'], instance['name']))
@@ -236,3 +239,111 @@ class HostState(object):
         self._stats = data
 
         return data
+
+class PCSTemplate:
+    def __init__(self, context, image_ref, user_id, project_id):
+        LOG.info("PCSTemplate.__init__")
+        self.context = context
+        self.image_ref = image_ref
+        self.user_id = user_id
+        self.project_id = project_id
+        self.rpm_path = None
+
+        # get image information from glance
+        (image_service, image_id) = \
+            glance.get_remote_image_service(self.context, self.image_ref)
+        image_info = image_service.show(self.context, image_ref)
+
+        name, version, release = self._get_remote_info(image_ref, image_info)
+        lname, lversion, lrelease = self._get_rpm_info(pkg = name)
+        LOG.info("Glance template: %s-%s-%s, local rpm: %s-%s-%s" % \
+                (name, version, release, lname, lversion, lrelease))
+        self.name = name[:-3]
+
+        if not lname:
+            self._download_rpm(image_ref, image_info)
+            LOG.info("installing rpm for template %s" % name)
+            utils.execute('rpm', '-i', self.rpm_path, run_as_root = True)
+        else:
+            x = self._cmp_version_release(version, release, lversion, lrelease)
+            if x == 0:
+                return
+            elif x < 0:
+                self._download_rpm(image_ref, image_info)
+                LOG.info("updating rpm for template %s" % name)
+                utils.execute('rpm', '-U', file, run_as_root = True)
+            else:
+                LOG.warn("local rpm is newer than remote one!")
+
+    def get_name(self):
+        return self.name
+
+    def _download_rpm(self, image_ref, image_info):
+        LOG.info("_download_rpm")
+        if self.rpm_path:
+            return
+
+        if image_info['name']:
+            name = image_info['name']
+        else:
+            name = image_info['id']
+
+        if CONF.tempdir:
+            tempdir = CONF.tempdir
+        else:
+            tempdir = tempfile.gettempdir()
+        rpm_path = os.path.join(tempdir, name)
+        images.fetch(self.context, self.image_ref, rpm_path,
+                self.user_id, self.project_id)
+        self.rpm_path = rpm_path
+
+    def _get_remote_info(self, image_ref, image_info):
+        LOG.info("_get_remote_info")
+        for prop in 'pcs_name', 'pcs_version', 'pcs_release':
+            if not image_info['properties'].has_key(prop):
+                self._download_rpm(image_ref, image_info)
+                name, ver, rel = self._get_rpm_info(file = self.rpm_path)
+                if not name:
+                    raise Exception("Invalid rpm file: %s" % self.rpm_path)
+        return (image_info['properties']['pcs_name'],
+                image_info['properties']['pcs_version'],
+                image_info['properties']['pcs_release'])
+
+    def _get_rpm_info(self, file = None, pkg = None):
+        LOG.info("_get_rpm_info")
+        cmd = ['rpm', '-q', '--qf', '%{NAME},%{VERSION},%{RELEASE}']
+        if file:
+            cmd += ['-p', file]
+        else:
+            cmd.append(pkg)
+
+        try:
+            out, err = utils.execute(*cmd)
+        except ProcessExecutionError:
+            return None, None, None
+        LOG.info("out: %r" % out)
+        return tuple(out.split(','))
+
+    def _cmp_version(self, ver1, ver2):
+        ver1_list = ver1.split('.')
+        ver2_list = ver2.split('.')
+        if len(ver1_list) > len(ver2_list):
+            return -1
+        elif len(ver1_list) < len(ver2_list):
+            return 1
+        else:
+            i = 0
+            for i in range(len(ver1_list)):
+                if int(ver1_list[i]) > int(ver2_list[i]):
+                    return -1
+                elif int(ver1_list[i]) < int(ver2_list[i]):
+                    return 1
+        return 0
+
+    def _cmp_version_release(self, ver1, rel1, ver2, rel2):
+        x = self._cmp_version(ver1, ver2)
+        if x:
+            return x
+        else:
+            return self._cmp_version(rel1, rel2)
+
