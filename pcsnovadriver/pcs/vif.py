@@ -1,5 +1,7 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 
+import os
+
 from oslo.config import cfg
 
 from nova import exception
@@ -11,6 +13,9 @@ from nova import utils
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
+
+def get_bridge_ifaces(bridge):
+    return os.listdir(os.path.join('/sys', 'class', 'net', bridge, 'brif'))
 
 class PCSVIFDriver(object):
 
@@ -82,7 +87,9 @@ class VifOvsHybrid(BaseVif):
         out, err = utils.execute('vzctl', 'set', instance['name'], '--save',
             '--netif_add', netif, run_as_root=True)
         utils.execute('ip', 'link', 'set', if_name, 'up', run_as_root=True)
-        utils.execute('brctl', 'addif', br_name, if_name, run_as_root=True)
+
+        if if_name not in get_bridge_ifaces(br_name):
+            utils.execute('brctl', 'addif', br_name, if_name, run_as_root=True)
         out, err = utils.execute('vzctl', 'set', instance['name'], '--save',
             '--ifname', if_name, '--dhcp', 'yes', run_as_root=True)
 
