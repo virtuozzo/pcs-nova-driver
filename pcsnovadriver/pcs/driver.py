@@ -214,6 +214,17 @@ class PCSDriver(driver.ComputeDriver):
             sdk_ve.start().wait()
         self.plug_vifs(instance, network_info)
 
+    def suspend(self, instance):
+        LOG.info("suspend %s" % instance['name'])
+        sdk_ve = self._get_ve_by_name(instance['name'])
+        sdk_ve.suspend().wait()
+
+    def resume(self, instance, network_info, block_device_info=None):
+        LOG.info("resume %s" % instance['name'])
+        sdk_ve = self._get_ve_by_name(instance['name'])
+        sdk_ve.resume().wait()
+        self.plug_vifs(instance, network_info)
+
 class HostState(object):
     def __init__(self, driver):
         super(HostState, self).__init__()
