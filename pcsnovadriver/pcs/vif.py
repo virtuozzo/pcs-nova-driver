@@ -91,7 +91,8 @@ class VifOvsHybrid(BaseVif):
         if if_name not in get_bridge_ifaces(br_name):
             utils.execute('brctl', 'addif', br_name, if_name, run_as_root=True)
         out, err = utils.execute('vzctl', 'set', instance['name'], '--save',
-            '--ifname', if_name, '--dhcp', 'yes', run_as_root=True)
+            '--ifname', if_name, '--host_ifname', if_name,
+            '--dhcp', 'yes', run_as_root=True)
 
     def unplug(self, instance, vif):
         iface_id = self.get_ovs_interfaceid(vif)
@@ -117,7 +118,8 @@ class VifOvsEthernet(BaseVif):
                                         if_name, iface_id, vif['address'],
                                         instance['uuid'])
         out, err = utils.execute('vzctl', 'set', instance['name'], '--save',
-            '--ifname', if_name, '--dhcp', 'yes', run_as_root=True)
+            '--ifname', if_name, '--host_ifname', if_name,
+            '--dhcp', 'yes', run_as_root=True)
 
     def unplug(self, instance, vif):
         linux_net.delete_ovs_vif_port(self.get_bridge_name(vif), vif['devname'])
