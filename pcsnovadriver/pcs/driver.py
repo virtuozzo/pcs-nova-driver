@@ -225,6 +225,18 @@ class PCSDriver(driver.ComputeDriver):
         sdk_ve.resume().wait()
         self.plug_vifs(instance, network_info)
 
+    def power_off(self, instance):
+        LOG.info("power_off %s" % instance['name'])
+        sdk_ve = self._get_ve_by_name(instance['name'])
+        sdk_ve.stop_ex(prlconsts.PSM_ACPI, prlconsts.PSF_FORCE).wait()
+
+    def power_on(self, context, instance, network_info,
+                    block_device_info=None):
+        LOG.info("power_on %s" % instance['name'])
+        sdk_ve = self._get_ve_by_name(instance['name'])
+        sdk_ve.start().wait()
+        self.plug_vifs(instance, network_info)
+
     def get_vnc_console(self, instance):
         LOG.info("get_vnc_console %s" % instance['name'])
         sdk_ve = self._get_ve_by_name(instance['name'])
