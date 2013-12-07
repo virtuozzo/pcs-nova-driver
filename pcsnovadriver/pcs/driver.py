@@ -225,6 +225,17 @@ class PCSDriver(driver.ComputeDriver):
         sdk_ve.resume().wait()
         self.plug_vifs(instance, network_info)
 
+    def get_vnc_console(self, instance):
+        LOG.info("get_vnc_console %s" % instance['name'])
+        sdk_ve = self._get_ve_by_name(instance['name'])
+
+        if sdk_ve.get_vncmode() != prlconsts.PRD_AUTO:
+            sdk_ve.begin_edit().wait()
+            sdk_ve.set_vncmode(prlconsts.PRD_AUTO)
+            sdk_ve.commit().wait()
+        port = sdk_ve.get_vncport()
+        return {'host': self.host, 'port': port, 'internal_access_path': None}
+
 class HostState(object):
     def __init__(self, driver):
         super(HostState, self).__init__()
