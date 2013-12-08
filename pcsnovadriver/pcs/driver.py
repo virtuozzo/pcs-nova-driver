@@ -133,6 +133,32 @@ class PCSDriver(driver.ComputeDriver):
         for vif in network_info:
             self.vif_driver.unplug(instance, vif)
 
+    def _format_system_metadata(self, instance):
+        res = {}
+        for d in instance['system_metadata']:
+            res[d['key']] = d['value']
+        return res
+
+    def _apply_flavor(self, instance, sdk_ve):
+        metadata = self._format_system_metadata(instance)
+        sdk_ve.begin_edit().wait()
+
+        sdk_ve.set_cpu_count(int(metadata['instance_type_vcpus']))
+
+        physpages = int(metadata['instance_type_memory_mb']) << 8
+        sdk_ve.set_resource(prlconsts.PCR_PHYSPAGES, physpages, physpages)
+
+        swappages = int(metadata['instance_type_swap']) << 8
+        sdk_ve.set_resource(prlconsts.PCR_SWAPPAGES, swappages, swappages)
+
+        ndisks = sdk_ve.get_devs_count_by_type(prlconsts.PDE_HARD_DISK)
+        if ndisks != 1:
+            raise Exception("More than one disk in container")
+        disk = sdk_ve.get_dev_by_type(prlconsts.PDE_HARD_DISK, 0)
+        disk.resize_image(int(metadata['instance_type_root_gb']) << 10, 0)
+
+        sdk_ve.commit().wait()
+
     def spawn(self, context, instance, image_meta, injected_files,
             admin_password, network_info=None, block_device_info=None):
         LOG.info("spawn: %s" % instance['name'])
@@ -147,13 +173,15 @@ class PCSDriver(driver.ComputeDriver):
                         instance['user_id'], instance['project_id'])
 
         sdk_ve = self._psrv.get_default_vm_config(
-                        prlsdkapi.consts.PVT_CT, '', 0, 0).wait()[0]
+                        prlsdkapi.consts.PVT_CT, 'vswap.1024MB', 0, 0).wait()[0]
         sdk_ve.set_uuid(instance['uuid'])
         sdk_ve.set_name(instance['name'])
         sdk_ve.set_vm_type(prlsdkapi.consts.PVT_CT)
         sdk_ve.set_os_template(tmpl.get_name())
         sdk_ve.reg('', True).wait()
 
+
+        self._apply_flavor(instance, sdk_ve)
         sdk_ve.start_ex(prlconsts.PSM_VM_START,
                     prlconsts.PNSF_VM_START_WAIT).wait()
 
