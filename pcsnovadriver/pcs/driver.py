@@ -145,6 +145,7 @@ class PCSDriver(driver.ComputeDriver):
 
         sdk_ve.set_cpu_count(int(metadata['instance_type_vcpus']))
 
+        sdk_ve.set_ram_size(int(metadata['instance_type_memory_mb']))
         physpages = int(metadata['instance_type_memory_mb']) << 8
         sdk_ve.set_resource(prlconsts.PCR_PHYSPAGES, physpages, physpages)
 
