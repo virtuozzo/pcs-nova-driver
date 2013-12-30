@@ -377,8 +377,8 @@ class EzTemplate:
 
         # get image information from glance
         (image_service, image_id) = \
-            glance.get_remote_image_service(self.context, self.image_ref)
-        image_info = image_service.show(self.context, image_ref)
+            glance.get_remote_image_service(context, image_ref)
+        image_info = image_service.show(context, image_ref)
 
         name, version, release = self._get_remote_info(context,
                                             image_ref, image_info)
