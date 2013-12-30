@@ -294,7 +294,7 @@ class PCSDriver(driver.ComputeDriver):
                         'status': 'active',
                         'name': snapshot['name'],
                         'disk_format': 'raw',
-                        'container_format': 'bare',
+                        'container_format': 'pcs-golden-image',
             }
 
             update_task_state(task_state=task_states.IMAGE_UPLOADING,
@@ -355,7 +355,7 @@ def get_template(context, image_ref, user_id, project_id):
             glance.get_remote_image_service(context, image_ref)
         image_info = image_service.show(context, image_ref)
 
-        if image_info['container_format'] == 'bare':
+        if image_info['container_format'] == 'pcs-ez':
             return EzTemplate(context, image_ref, user_id, project_id)
         else:
             raise Exception("Unsupported container format: %s" % \

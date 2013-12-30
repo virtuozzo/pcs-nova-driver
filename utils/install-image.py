@@ -27,7 +27,7 @@ cmd = ['glance', 'image-create',
         '--property', 'pcs_version=%s' % ver,
         '--property', 'pcs_release=%s' % rel,
         '--disk-format', 'raw',
-        '--container-format', 'bare']
+        '--container-format', 'pcs-ez']
 
 cmd += sys.argv[2:]
 
