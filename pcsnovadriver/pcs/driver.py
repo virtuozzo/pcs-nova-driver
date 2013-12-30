@@ -174,17 +174,9 @@ class PCSDriver(driver.ComputeDriver):
         LOG.info("network_info=%r" % network_info)
         LOG.info("block_device_info=%r" % block_device_info)
 
-        tmpl = PCSTemplate(context, instance['image_ref'],
+        tmpl = get_template(context, instance['image_ref'],
                         instance['user_id'], instance['project_id'])
-
-        sdk_ve = self._psrv.get_default_vm_config(
-                        prlsdkapi.consts.PVT_CT, 'vswap.1024MB', 0, 0).wait()[0]
-        sdk_ve.set_uuid(instance['uuid'])
-        sdk_ve.set_name(instance['name'])
-        sdk_ve.set_vm_type(prlsdkapi.consts.PVT_CT)
-        sdk_ve.set_os_template(tmpl.get_name())
-        sdk_ve.reg('', True).wait()
-
+        sdk_ve = tmpl.create_instance(self._psrv, instance)
 
         self._apply_flavor(instance, sdk_ve)
         sdk_ve.start_ex(prlconsts.PSM_VM_START,
@@ -358,7 +350,25 @@ class HostState(object):
 
         return data
 
-class PCSTemplate:
+def get_template(context, image_ref, user_id, project_id):
+        (image_service, image_id) = \
+            glance.get_remote_image_service(context, image_ref)
+        image_info = image_service.show(context, image_ref)
+
+        if image_info['container_format'] == 'bare':
+            return EzTemplate(context, image_ref, user_id, project_id)
+        else:
+            raise Exception("Unsupported container format: %s" % \
+                                    image_info['container_format'])
+
+class PCSTemplate(object):
+    def __init__(self, context, image_ref, user_id, project_id):
+        pass
+
+    def create_instance(self, instance):
+        raise NotImplementedError()
+
+class EzTemplate:
     def __init__(self, context, image_ref, user_id, project_id):
         LOG.info("PCSTemplate.__init__")
         self.context = context
@@ -465,3 +475,12 @@ class PCSTemplate:
         else:
             return self._cmp_version(rel1, rel2)
 
+    def create_instance(self, psrv, instance):
+        sdk_ve = psrv.get_default_vm_config(
+                        prlsdkapi.consts.PVT_CT, 'vswap.1024MB', 0, 0).wait()[0]
+        sdk_ve.set_uuid(instance['uuid'])
+        sdk_ve.set_name(instance['name'])
+        sdk_ve.set_vm_type(prlsdkapi.consts.PVT_CT)
+        sdk_ve.set_os_template(self.get_name())
+        sdk_ve.reg('', True).wait()
+        return sdk_ve
