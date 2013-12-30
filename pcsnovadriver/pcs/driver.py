@@ -371,8 +371,6 @@ class PCSTemplate(object):
 class EzTemplate:
     def __init__(self, context, image_ref, user_id, project_id):
         LOG.info("PCSTemplate.__init__")
-        self.context = context
-        self.image_ref = image_ref
         self.user_id = user_id
         self.project_id = project_id
         self.rpm_path = None
@@ -382,14 +380,15 @@ class EzTemplate:
             glance.get_remote_image_service(self.context, self.image_ref)
         image_info = image_service.show(self.context, image_ref)
 
-        name, version, release = self._get_remote_info(image_ref, image_info)
+        name, version, release = self._get_remote_info(context,
+                                            image_ref, image_info)
         lname, lversion, lrelease = self._get_rpm_info(pkg = name)
         LOG.info("Glance template: %s-%s-%s, local rpm: %s-%s-%s" % \
                 (name, version, release, lname, lversion, lrelease))
         self.name = name[:-3]
 
         if not lname:
-            self._download_rpm(image_ref, image_info)
+            self._download_rpm(context, image_ref, image_info)
             LOG.info("installing rpm for template %s" % name)
             utils.execute('rpm', '-i', self.rpm_path, run_as_root = True)
         else:
@@ -397,7 +396,7 @@ class EzTemplate:
             if x == 0:
                 return
             elif x < 0:
-                self._download_rpm(image_ref, image_info)
+                self._download_rpm(context, image_ref, image_info)
                 LOG.info("updating rpm for template %s" % name)
                 utils.execute('rpm', '-U', file, run_as_root = True)
             else:
@@ -406,7 +405,7 @@ class EzTemplate:
     def get_name(self):
         return self.name
 
-    def _download_rpm(self, image_ref, image_info):
+    def _download_rpm(self, context, image_ref, image_info):
         LOG.info("_download_rpm")
         if self.rpm_path:
             return
@@ -421,15 +420,15 @@ class EzTemplate:
         else:
             tempdir = tempfile.gettempdir()
         rpm_path = os.path.join(tempdir, name)
-        images.fetch(self.context, self.image_ref, rpm_path,
+        images.fetch(context, image_ref, rpm_path,
                 self.user_id, self.project_id)
         self.rpm_path = rpm_path
 
-    def _get_remote_info(self, image_ref, image_info):
+    def _get_remote_info(self, context, image_ref, image_info):
         LOG.info("_get_remote_info")
         for prop in 'pcs_name', 'pcs_version', 'pcs_release':
             if not image_info['properties'].has_key(prop):
-                self._download_rpm(image_ref, image_info)
+                self._download_rpm(context, image_ref, image_info)
                 name, ver, rel = self._get_rpm_info(file = self.rpm_path)
                 if not name:
                     raise Exception("Invalid rpm file: %s" % self.rpm_path)
