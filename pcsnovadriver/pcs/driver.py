@@ -3,13 +3,17 @@
 import socket
 import os
 import tempfile
+import subprocess
+import shlex
 
 from oslo.config import cfg
 
 from nova.image import glance
 from nova.network import linux_net
 from nova import exception
+from nova.compute import utils as compute_utils
 from nova.compute import power_state
+from nova.compute import task_states
 from nova.openstack.common.gettextutils import _
 from nova.openstack.common.processutils import ProcessExecutionError
 from nova.openstack.common import log as logging
@@ -277,6 +281,44 @@ class PCSDriver(driver.ComputeDriver):
             sdk_ve.commit().wait()
         port = sdk_ve.get_vncport()
         return {'host': self.host, 'port': port, 'internal_access_path': None}
+
+    def snapshot(self, context, instance, image_id, update_task_state):
+        LOG.info("snapshot %s" % instance['name'])
+
+        sdk_ve = self._get_ve_by_name(instance['name'])
+
+        update_task_state(task_state=task_states.IMAGE_PENDING_UPLOAD)
+
+        tmpl_ve = sdk_ve.clone_ex("tmpl-" + image_id, '',
+                prlconsts.PCVF_CLONE_TO_TEMPLATE).wait().get_param()
+
+        try:
+            _image_service = glance.get_remote_image_service(context, image_id)
+            snapshot_image_service, snapshot_image_id = _image_service
+            snapshot = snapshot_image_service.show(context, snapshot_image_id)
+            LOG.info("snapshot=%r" % snapshot)
+
+            metadata = {'is_public': False,
+                        'status': 'active',
+                        'name': snapshot['name'],
+                        'disk_format': 'raw',
+                        'container_format': 'bare',
+            }
+
+            update_task_state(task_state=task_states.IMAGE_UPLOADING,
+                        expected_state=task_states.IMAGE_PENDING_UPLOAD)
+
+            args = shlex.split(utils.get_root_helper()) + \
+                    ['tar', 'cO', '-C', tmpl_ve.get_home_path(), '.']
+            LOG.info("Running tar: %r" % args)
+            p = subprocess.Popen(args, stdout = subprocess.PIPE)
+            snapshot_image_service.update(context, image_id, metadata, p.stdout)
+            ret = p.wait()
+            if ret:
+                raise Exception("tar returned %d" % ret)
+            LOG.info(_("Snapshot image upload complete"), instance=instance)
+        finally:
+            tmpl_ve.delete().wait()
 
 class HostState(object):
     def __init__(self, driver):
