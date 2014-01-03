@@ -429,9 +429,6 @@ class EzTemplate:
             else:
                 LOG.warn("local rpm is newer than remote one!")
 
-    def get_name(self):
-        return self.name
-
     def _download_rpm(self, context, image_ref, image_info):
         LOG.info("_download_rpm")
         if self.rpm_path:
@@ -507,7 +504,7 @@ class EzTemplate:
         sdk_ve.set_uuid(instance['uuid'])
         sdk_ve.set_name(instance['name'])
         sdk_ve.set_vm_type(prlsdkapi.consts.PVT_CT)
-        sdk_ve.set_os_template(self.get_name())
+        sdk_ve.set_os_template(self.name)
         sdk_ve.reg('', True).wait()
         return sdk_ve
 
