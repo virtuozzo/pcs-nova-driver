@@ -67,6 +67,10 @@ def pcs_init_state_map():
         prlconsts.VMS_SUSPENDING_SYNC:      power_state.NOSTATE,
     }
 
+def get_sdk_errcode(strerr):
+    lib_err = getattr(prlsdkapi.prlsdk.errors, strerr)
+    return prlsdkapi.conv_error(lib_err)
+
 class PCSDriver(driver.ComputeDriver):
 
     def __init__(self, virtapi, read_only=False):
@@ -124,8 +128,7 @@ class PCSDriver(driver.ComputeDriver):
             ve = self._psrv.get_vm_config(name,
                         prlsdkapi.consts.PGVC_SEARCH_BY_NAME).wait()[0]
         except prlsdkapi.PrlSDKError, e:
-            lib_err = prlsdkapi.prlsdk.errors.PRL_ERR_VM_UUID_NOT_FOUND
-            if e.error_code == prlsdkapi.conv_error(lib_err):
+            if e.error_code == get_sdk_errcode('PRL_ERR_VM_UUID_NOT_FOUND'):
                 raise exception.InstanceNotFound(instance_id=name)
             raise
         return ve
