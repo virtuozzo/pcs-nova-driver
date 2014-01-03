@@ -5,6 +5,7 @@ import os
 import tempfile
 import subprocess
 import shlex
+import shutil
 
 from oslo.config import cfg
 
@@ -35,6 +36,10 @@ pcs_opts = [
 
     cfg.StrOpt('pcs_password',
                 help = 'PCS SDK password'),
+
+    cfg.StrOpt('pcs_golden_image_dir',
+                default = '/vz/openstack-templates',
+                help = 'Directory for storing golden image cache.'),
     ]
 
 CONF = cfg.CONF
@@ -174,7 +179,7 @@ class PCSDriver(driver.ComputeDriver):
         LOG.info("network_info=%r" % network_info)
         LOG.info("block_device_info=%r" % block_device_info)
 
-        tmpl = get_template(context, instance['image_ref'],
+        tmpl = get_template(self, context, instance['image_ref'],
                         instance['user_id'], instance['project_id'])
         sdk_ve = tmpl.create_instance(self._psrv, instance)
 
@@ -367,13 +372,15 @@ class HostState(object):
 
         return data
 
-def get_template(context, image_ref, user_id, project_id):
+def get_template(driver, context, image_ref, user_id, project_id):
         (image_service, image_id) = \
             glance.get_remote_image_service(context, image_ref)
         image_info = image_service.show(context, image_ref)
 
         if image_info['container_format'] == 'pcs-ez':
-            return EzTemplate(context, image_ref, user_id, project_id)
+            return EzTemplate(driver, context, image_ref, user_id, project_id)
+        elif image_info['container_format'] == 'pcs-golden-image':
+            return GoldenImageTemplate(driver, context, image_ref, user_id, project_id)
         else:
             raise Exception("Unsupported container format: %s" % \
                                     image_info['container_format'])
@@ -386,7 +393,7 @@ class PCSTemplate(object):
         raise NotImplementedError()
 
 class EzTemplate:
-    def __init__(self, context, image_ref, user_id, project_id):
+    def __init__(self, driver, context, image_ref, user_id, project_id):
         LOG.info("PCSTemplate.__init__")
         self.user_id = user_id
         self.project_id = project_id
@@ -499,4 +506,52 @@ class EzTemplate:
         sdk_ve.set_vm_type(prlsdkapi.consts.PVT_CT)
         sdk_ve.set_os_template(self.get_name())
         sdk_ve.reg('', True).wait()
+        return sdk_ve
+
+class GoldenImageTemplate(PCSTemplate):
+
+    def __init__(self, driver, context, image_ref, user_id, project_id):
+        LOG.info("GoldenImageTemplate.__init__")
+        self.user_id = user_id
+        self.project_id = project_id
+        self.driver = driver
+
+        (image_service, image_id) = \
+            glance.get_remote_image_service(context, image_ref)
+        image_info = image_service.show(context, image_ref)
+        self.image_id = image_id
+
+        if driver.instance_exists("tmpl-%s" % image_id):
+            LOG.info("Using golden image from cache.")
+        else:
+            LOG.info("Downloading golden image...")
+            tmpl_path = self._get_image(context, image_id, image_service)
+            self._register_template(tmpl_path)
+
+    def _get_image(self, context, image_id, image_service):
+        tmpl_path = os.path.join(CONF.pcs_golden_image_dir, image_id)
+        if os.path.exists(tmpl_path):
+            shutil.rmtree(tmpl_path)
+        os.mkdir(tmpl_path)
+
+        args = ['tar', 'x', '-C', tmpl_path]
+        LOG.info("Running tar: %r" % args)
+        p = subprocess.Popen(args, stdin = subprocess.PIPE)
+
+        image_service.download(context, image_id, data=p.stdin)
+        p.stdin.close()
+
+        ret = p.wait()
+        if ret:
+            raise Exception("tar returned %d" % ret)
+
+        LOG.info(_("Golden image download complete"))
+        return tmpl_path
+
+    def _register_template(self, tmpl_path):
+        self.driver._psrv.register_vm(tmpl_path, True).wait()
+
+    def create_instance(self, psrv, instance):
+        tmpl_ve = self.driver._get_ve_by_name("tmpl-%s" % self.image_id)
+        sdk_ve = tmpl_ve.clone_ex(instance['name'], '', 0).wait().get_param()
         return sdk_ve
