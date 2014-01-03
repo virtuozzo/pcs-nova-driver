@@ -274,6 +274,21 @@ class PCSDriver(driver.ComputeDriver):
         port = sdk_ve.get_vncport()
         return {'host': self.host, 'port': port, 'internal_access_path': None}
 
+    def _reset_network(self, sdk_ve):
+        """
+        Remove all network adapters (except for venet, which
+        can't be removed).
+        """
+        ndevs = sdk_ve.get_devs_count_by_type(
+                    prlconsts.PDE_GENERIC_NETWORK_ADAPTER)
+        sdk_ve.begin_edit().wait()
+        for i in xrange(ndevs):
+            dev = sdk_ve.get_dev_by_type(
+                        prlconsts.PDE_GENERIC_NETWORK_ADAPTER, i)
+            if dev.get_emulated_type() != prlconsts.PNA_ROUTED:
+                dev.remove()
+        sdk_ve.commit().wait()
+
     def snapshot(self, context, instance, image_id, update_task_state):
         LOG.info("snapshot %s" % instance['name'])
 
@@ -283,6 +298,8 @@ class PCSDriver(driver.ComputeDriver):
 
         tmpl_ve = sdk_ve.clone_ex("tmpl-" + image_id, '',
                 prlconsts.PCVF_CLONE_TO_TEMPLATE).wait().get_param()
+
+        self._reset_network(tmpl_ve)
 
         try:
             _image_service = glance.get_remote_image_service(context, image_id)
