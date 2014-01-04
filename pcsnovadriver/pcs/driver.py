@@ -279,6 +279,9 @@ class PCSDriver(driver.ComputeDriver):
             sdk_ve.begin_edit().wait()
             sdk_ve.set_vncmode(prlconsts.PRD_AUTO)
             sdk_ve.commit().wait()
+
+        # need to update ve config
+        sdk_ve = self._get_ve_by_name(instance['name'])
         port = sdk_ve.get_vncport()
         return {'host': self.host, 'port': port, 'internal_access_path': None}
 
