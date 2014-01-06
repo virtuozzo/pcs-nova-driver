@@ -342,6 +342,46 @@ class PCSDriver(driver.ComputeDriver):
         finally:
             tmpl_ve.delete().wait()
 
+    def refresh_security_group_rules(self, security_group_id):
+        LOG.info("refresh_security_group_rules %s" % instance['name'])
+        self.firewall_driver.refresh_security_group_rules(security_group_id)
+
+    def refresh_security_group_members(self, security_group_id):
+        LOG.info("refresh_security_group_members %s" % instance['name'])
+        self.firewall_driver.refresh_security_group_members(security_group_id)
+
+    def refresh_instance_security_rules(self, instance):
+        LOG.info("refresh_instance_security_rules %s" % instance['name'])
+        self.firewall_driver.refresh_instance_security_rules(instance)
+
+    def refresh_provider_fw_rules(self):
+        LOG.info("refresh_provider_fw_rules %s" % instance['name'])
+        self.firewall_driver.refresh_provider_fw_rules()
+
+    def filter_defer_apply_on(self):
+        LOG.info("filter_defer_apply_on %s" % instance['name'])
+        self.firewall_driver.filter_defer_apply_on()
+
+    def filter_defer_apply_off(self):
+        LOG.info("filter_defer_apply_off %s" % instance['name'])
+        self.firewall_driver.filter_defer_apply_off()
+
+    def unfilter_instance(self, instance, network_info):
+        """See comments of same method in firewall_driver."""
+        LOG.info("unfilter_instance %s" % instance['name'])
+        self.firewall_driver.unfilter_instance(instance,
+                                               network_info=network_info)
+
+    def inject_network_info(self, instance, nw_info):
+        LOG.info("inject_network_info %s" % instance['name'])
+        self.firewall_driver.setup_basic_filtering(instance, nw_info)
+
+    def ensure_filtering_rules_for_instance(self, instance, network_info,
+                                            time_module=None):
+        LOG.info("ensure_filtering_rules_for_instance %s" % instance['name'])
+        self.firewall_driver.setup_basic_filtering(instance, network_info)
+        self.firewall_driver.prepare_instance_filter(instance, network_info)
+
 class HostState(object):
     def __init__(self, driver):
         super(HostState, self).__init__()
