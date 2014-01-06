@@ -213,6 +213,8 @@ class PCSDriver(driver.ComputeDriver):
         sdk_ve.delete().wait()
 
         self.unplug_vifs(instance, network_info)
+        self.firewall_driver.unfilter_instance(instance,
+                                network_info=network_info)
 
     def get_info(self, instance):
         LOG.info("get_info: %s %s" % (instance['id'], instance['name']))
