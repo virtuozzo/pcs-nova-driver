@@ -38,15 +38,15 @@ class PCSVIFDriver(object):
             raise exception.NovaException(
                 _("Unexpected vif_type=%s") % vif_type)
 
-    def plug(self, instance, vif):
+    def plug(self, driver, instance, vif):
         LOG.info("plug: %s:%s" % (instance['name'], vif['devname']))
         vif_class = self._get_vif_class(instance, vif)
-        vif_class.plug(instance, vif)
+        vif_class.plug(driver, instance, vif)
 
-    def unplug(self, instance, vif):
+    def unplug(self, driver, instance, vif):
         LOG.info("unplug: %s:%s" % (instance['name'], vif['devname']))
         vif_class = self._get_vif_class(instance, vif)
-        vif_class.unplug(instance, vif)
+        vif_class.unplug(driver, instance, vif)
 
 class BaseVif:
     def get_ovs_interfaceid(self, vif):
@@ -64,7 +64,7 @@ class BaseVif:
 
 class VifOvsHybrid(BaseVif):
 
-    def plug(self, instance, vif):
+    def plug(self, driver, instance, vif):
         iface_id = self.get_ovs_interfaceid(vif)
         if_name = vif['devname']
         br_name = self.get_br_name(vif['id'])
@@ -94,7 +94,7 @@ class VifOvsHybrid(BaseVif):
             '--ifname', if_name, '--host_ifname', if_name,
             '--dhcp', 'yes', run_as_root=True)
 
-    def unplug(self, instance, vif):
+    def unplug(self, driver, instance, vif):
         iface_id = self.get_ovs_interfaceid(vif)
         br_name = self.get_br_name(vif['id'])
         v1_name, v2_name = self.get_veth_pair_names(vif['id'])
@@ -105,7 +105,7 @@ class VifOvsHybrid(BaseVif):
 
 class VifOvsEthernet(BaseVif):
 
-    def plug(self, instance, vif):
+    def plug(self, driver, instance, vif):
         iface_id = self.get_ovs_interfaceid(vif)
         if_name = vif['devname']
 
@@ -121,5 +121,5 @@ class VifOvsEthernet(BaseVif):
             '--ifname', if_name, '--host_ifname', if_name,
             '--dhcp', 'yes', run_as_root=True)
 
-    def unplug(self, instance, vif):
+    def unplug(self, driver, instance, vif):
         linux_net.delete_ovs_vif_port(self.get_bridge_name(vif), vif['devname'])

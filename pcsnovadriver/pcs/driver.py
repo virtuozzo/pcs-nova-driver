@@ -138,12 +138,12 @@ class PCSDriver(driver.ComputeDriver):
         if not self.instance_exists(instance['name']):
             return
         for vif in network_info:
-            self.vif_driver.plug(instance, vif)
+            self.vif_driver.plug(self, instance, vif)
 
     def unplug_vifs(self, instance, network_info):
         LOG.info("unplug_vifs: %s" % instance['name'])
         for vif in network_info:
-            self.vif_driver.unplug(instance, vif)
+            self.vif_driver.unplug(self, instance, vif)
 
     def _format_system_metadata(self, instance):
         res = {}
