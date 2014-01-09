@@ -37,9 +37,9 @@ pcs_opts = [
     cfg.StrOpt('pcs_password',
                 help = 'PCS SDK password'),
 
-    cfg.StrOpt('pcs_golden_image_dir',
+    cfg.StrOpt('pcs_template_dir',
                 default = '/vz/openstack-templates',
-                help = 'Directory for storing golden image cache.'),
+                help = 'Directory for storing image cache.'),
     ]
 
 CONF = cfg.CONF
@@ -574,7 +574,7 @@ class GoldenImageTemplate(PCSTemplate):
             self._register_template(tmpl_path)
 
     def _get_image(self, context, image_id, image_service):
-        tmpl_path = os.path.join(CONF.pcs_golden_image_dir, image_id)
+        tmpl_path = os.path.join(CONF.pcs_template_dir, image_id)
         if os.path.exists(tmpl_path):
             shutil.rmtree(tmpl_path)
         os.mkdir(tmpl_path)
