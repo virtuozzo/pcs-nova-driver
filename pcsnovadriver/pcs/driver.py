@@ -102,17 +102,17 @@ class PCSDriver(driver.ComputeDriver):
             self.host = host
 
         prlsdkapi.init_server_sdk()
-        self._psrv = prlsdkapi.Server()
-        self._psrv.login('localhost', CONF.pcs_login, CONF.pcs_password).wait()
+        self.psrv = prlsdkapi.Server()
+        self.psrv.login('localhost', CONF.pcs_login, CONF.pcs_password).wait()
 
     def list_instances(self):
         LOG.info("list_instances")
-        ves = self._psrv.get_vm_list_ex(nFlags = prlconsts.PVTF_CT).wait()
+        ves = self.psrv.get_vm_list_ex(nFlags = prlconsts.PVTF_CT).wait()
         return map(lambda x: x.get_name(), ves)
 
     def list_instance_uuids(self):
         LOG.info("list_instance_uuids")
-        ves = self._psrv.get_vm_list_ex(nFlags = prlconsts.PVTF_CT).wait()
+        ves = self.psrv.get_vm_list_ex(nFlags = prlconsts.PVTF_CT).wait()
         return map(lambda x: x.get_uuid()[1:-1], ves)
 
     def instance_exists(self, instance_id):
@@ -125,7 +125,7 @@ class PCSDriver(driver.ComputeDriver):
 
     def _get_ve_by_name(self, name):
         try:
-            ve = self._psrv.get_vm_config(name,
+            ve = self.psrv.get_vm_config(name,
                         prlsdkapi.consts.PGVC_SEARCH_BY_NAME).wait()[0]
         except prlsdkapi.PrlSDKError, e:
             if e.error_code == get_sdk_errcode('PRL_ERR_VM_UUID_NOT_FOUND'):
@@ -184,7 +184,7 @@ class PCSDriver(driver.ComputeDriver):
 
         tmpl = get_template(self, context, instance['image_ref'],
                         instance['user_id'], instance['project_id'])
-        sdk_ve = tmpl.create_instance(self._psrv, instance)
+        sdk_ve = tmpl.create_instance(self.psrv, instance)
 
         self._apply_flavor(instance, sdk_ve)
         sdk_ve.start_ex(prlconsts.PSM_VM_START,
@@ -399,9 +399,9 @@ class HostState(object):
         return int(pver[0]) * 10000 + int(pver[1]) * 100
 
     def update_status(self):
-        stat = self.driver._psrv.get_statistics().wait()[0]
-        cfg = self.driver._psrv.get_srv_config().wait()[0]
-        info = self.driver._psrv.get_server_info()
+        stat = self.driver.psrv.get_statistics().wait()[0]
+        cfg = self.driver.psrv.get_srv_config().wait()[0]
+        info = self.driver.psrv.get_server_info()
         data = {}
 
         data = dict()
@@ -594,7 +594,7 @@ class GoldenImageTemplate(PCSTemplate):
         return tmpl_path
 
     def _register_template(self, tmpl_path):
-        self.driver._psrv.register_vm(tmpl_path, True).wait()
+        self.driver.psrv.register_vm(tmpl_path, True).wait()
 
     def create_instance(self, psrv, instance):
         tmpl_ve = self.driver._get_ve_by_name("tmpl-%s" % self.image_id)
