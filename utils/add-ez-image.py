@@ -6,7 +6,7 @@ import commands
 import subprocess
 
 if len(sys.argv) != 2:
-    print "Usage: install-image.py <image-file> <extra glance args>"
+    print "Usage: %s <image-file> <extra glance args>" % sys.argv[0]
     sys.exit(1)
 
 if not os.path.exists(sys.argv[1]):
