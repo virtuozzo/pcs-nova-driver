@@ -1,0 +1,139 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+
+import os
+import sys
+import commands
+import subprocess
+import argparse
+import re
+
+from keystoneclient.v2_0 import client as ksclient
+import glanceclient
+from glanceclient import exc
+from glanceclient.openstack.common import strutils
+from glanceclient.common import utils
+from glanceclient.shell import OpenStackImagesShell
+
+import prlsdkapi
+
+prlconsts = prlsdkapi.consts
+
+class PCSImagesShell(OpenStackImagesShell):
+
+    def get_subcommand_parser(self, version):
+        parser = self.get_base_parser()
+        self.subcommands = {}
+        subparsers = parser.add_subparsers(metavar='<subcommand>')
+        submodule = utils.import_versioned_module(version, 'shell')
+        self._find_actions(subparsers, self)
+        return parser
+
+    def _init_sdk(self, login, passwd):
+        prlsdkapi.init_server_sdk()
+        srv = prlsdkapi.Server()
+        if not login:
+            srv.login_local().wait()
+        else:
+            srv.login(login, passwd)
+        return srv
+
+    def _reset_network(self, ve):
+        ndevs = ve.get_devs_count_by_type(
+                prlconsts.PDE_GENERIC_NETWORK_ADAPTER)
+        ve.begin_edit().wait()
+        for i in xrange(ndevs):
+            dev = ve.get_dev_by_type(
+                    prlconsts.PDE_GENERIC_NETWORK_ADAPTER, i)
+            if dev.get_emulated_type() != prlconsts.PNA_ROUTED:
+                dev.remove()
+        ve.commit().wait()
+
+    @utils.arg('ve_name', metavar='<VE_NAME>',
+               help='Name or UUID of VM.')
+    @utils.arg('--name', metavar='<NAME>',
+               help='Name of image.')
+    @utils.arg('--store', metavar='<STORE>',
+               help='Store to upload image to.')
+    @utils.arg('--owner', metavar='<TENANT_ID>',
+               help='Store to upload image to.')
+    @utils.arg('--min-disk', metavar='<DISK_GB>',
+               help=('Minimum size of disk needed to '
+                     'boot image (in gigabytes).'))
+    @utils.arg('--min-ram', metavar='<DISK_RAM>',
+               help=('Minimum amount of ram needed to '
+                     'boot image (in megabytes).'))
+    @utils.arg('--is-public', metavar='{True,False}',
+               type=utils.string_to_bool,
+               help='Make image accessible to the public.')
+    @utils.arg('--is-protected', metavar='{True,False}',
+               type=utils.string_to_bool,
+               help='Prevent image from being deleted.')
+    @utils.arg('--prl-login', metavar='<LOGIN>', help='')
+    @utils.arg('--prl-passwd', metavar='<PASSWORD>', help='')
+    def do_image_create(self, gc, args):
+        if args.os_image_api_version != '2':
+            raise Exception('Only image API version 2 is supported.')
+
+        srv = self._init_sdk(args.prl_login, args.prl_passwd)
+        ve = srv.get_vm_config(args.ve_name,
+                    prlconsts.PGVC_SEARCH_BY_NAME |
+                    prlconsts.PGVC_SEARCH_BY_UUID).wait()[0]
+
+        # create an empty image
+        schema = gc.schemas.get("image")
+        _args = [(x[0].replace('-', '_'), x[1]) for x in vars(args).items()]
+        fields = dict(filter(lambda x: x[1] is not None and
+                             (x[0] == 'property' or
+                              schema.is_core_property(x[0])),
+                             _args))
+
+        fields['disk_format'] = 'ploop'
+        if ve.get_vm_type() == prlconsts.PVT_VM:
+            fields['container_format'] = 'pcs-vm'
+        else:
+            fields['container_format'] = 'pcs-container'
+
+        image = gc.images.create(**fields)
+
+        image_ve = None
+        try:
+            # clone VE and upload it to glance
+            job = ve.clone_ex("tmpl-" + image.id, '',
+                              prlconsts.PCVF_CLONE_TO_TEMPLATE)
+            image_ve = job.wait().get_param()
+            self._reset_network(image_ve)
+
+            cmd = ['tar', 'cO', '-C', image_ve.get_home_path(), '.']
+            p = subprocess.Popen(cmd, stdout = subprocess.PIPE)
+            gc.images.upload(image.id, p.stdout)
+
+            ret = p.wait()
+            if ret:
+                raise Exception('tar returned %d' % ret)
+
+            # print new image info
+            image = gc.images.get(image.id)
+
+            ignore = ['self', 'access', 'file', 'schema']
+            image_dict = dict([item for item in image.iteritems()
+                          if item[0] not in ignore])
+            utils.print_dict(image_dict)
+        except:
+            gc.images.delete(image.id)
+            raise
+        finally:
+            if image_ve:
+                image_ve.delete().wait()
+            srv.logoff()
+            prlsdkapi.deinit_sdk()
+
+try:
+    PCSImagesShell().main(map(strutils.safe_decode, sys.argv[1:]))
+except KeyboardInterrupt:
+    print('... terminating PCS glance client', file=sys.stderr)
+    sys.exit(1)
+except Exception as e:
+    print(utils.exception_to_str(e), file=sys.stderr)
+    sys.exit(1)
