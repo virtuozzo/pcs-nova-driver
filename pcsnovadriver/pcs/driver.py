@@ -107,12 +107,14 @@ class PCSDriver(driver.ComputeDriver):
 
     def list_instances(self):
         LOG.info("list_instances")
-        ves = self.psrv.get_vm_list_ex(nFlags = prlconsts.PVTF_CT).wait()
+        flags = prlconsts.PVTF_CT|prlconsts.PVTF_VM
+        ves = self.psrv.get_vm_list_ex(nFlags=flags).wait()
         return map(lambda x: x.get_name(), ves)
 
     def list_instance_uuids(self):
         LOG.info("list_instance_uuids")
-        ves = self.psrv.get_vm_list_ex(nFlags = prlconsts.PVTF_CT).wait()
+        flags = prlconsts.PVTF_CT|prlconsts.PVTF_VM
+        ves = self.psrv.get_vm_list_ex(nFlags = flags).wait()
         return map(lambda x: x.get_uuid()[1:-1], ves)
 
     def instance_exists(self, instance_id):
@@ -137,11 +139,21 @@ class PCSDriver(driver.ComputeDriver):
         LOG.info("plug_vifs: %s" % instance['name'])
         if not self.instance_exists(instance['name']):
             return
+        #TODO: tune network using prlsdkapi instead of
+        # vzctl and then enable networking for VMs
+        sdk_ve = self._get_ve_by_name(instance['name'])
+        if sdk_ve.get_vm_type() == prlconsts.PVT_VM:
+            return
         for vif in network_info:
             self.vif_driver.plug(self, instance, vif)
 
     def unplug_vifs(self, instance, network_info):
         LOG.info("unplug_vifs: %s" % instance['name'])
+        sdk_ve = self._get_ve_by_name(instance['name'])
+        if sdk_ve.get_vm_type() == prlconsts.PVT_VM:
+            return
+        #TODO: tune network using prlsdkapi instead of
+        # vzctl and then enable networking for VMs
         for vif in network_info:
             self.vif_driver.unplug(self, instance, vif)
 
@@ -158,13 +170,16 @@ class PCSDriver(driver.ComputeDriver):
         sdk_ve.set_cpu_count(int(metadata['instance_type_vcpus']))
 
         sdk_ve.set_ram_size(int(metadata['instance_type_memory_mb']))
-        physpages = int(metadata['instance_type_memory_mb']) << 8
-        sdk_ve.set_resource(prlconsts.PCR_PHYSPAGES, physpages, physpages)
+        if sdk_ve.get_vm_type() == prlconsts.PVT_CT:
+            # Can't tune physpages and swappages for VMs
+            physpages = int(metadata['instance_type_memory_mb']) << 8
+            sdk_ve.set_resource(prlconsts.PCR_PHYSPAGES, physpages, physpages)
 
-        swappages = int(metadata['instance_type_swap']) << 8
-        sdk_ve.set_resource(prlconsts.PCR_SWAPPAGES, swappages, swappages)
-
+            swappages = int(metadata['instance_type_swap']) << 8
+            sdk_ve.set_resource(prlconsts.PCR_SWAPPAGES, swappages, swappages)
         sdk_ve.commit().wait()
+
+        # TODO: tune swap size in VMs
 
         ndisks = sdk_ve.get_devs_count_by_type(prlconsts.PDE_HARD_DISK)
         if ndisks != 1:
@@ -428,7 +443,7 @@ def get_template(driver, context, image_ref, user_id, project_id):
 
         if image_info['container_format'] == 'pcs-ez':
             return EzTemplate(driver, context, image_ref, user_id, project_id)
-        elif image_info['container_format'] == 'pcs-container':
+        elif image_info['container_format'] in ['pcs-container', 'pcs-vm']:
             return GoldenImageTemplate(driver, context, image_ref, user_id, project_id)
         else:
             raise Exception("Unsupported container format: %s" % \
