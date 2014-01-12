@@ -105,7 +105,13 @@ class PCSImagesShell(OpenStackImagesShell):
             image_ve = job.wait().get_param()
             self._reset_network(image_ve)
 
-            cmd = ['tar', 'cO', '-C', image_ve.get_home_path(), '.']
+            ve_dir = image_ve.get_home_path()
+            if not os.path.isdir(ve_dir):
+                # for containers get_home_path returns path
+                # to private area, but for VMs - path to VM
+                # config file.
+                ve_dir = os.path.dirname(ve_dir)
+            cmd = ['tar', 'cO', '-C', ve_dir, '.']
             p = subprocess.Popen(cmd, stdout = subprocess.PIPE)
             gc.images.upload(image.id, p.stdout)
 
