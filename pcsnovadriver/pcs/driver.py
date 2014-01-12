@@ -164,13 +164,14 @@ class PCSDriver(driver.ComputeDriver):
         swappages = int(metadata['instance_type_swap']) << 8
         sdk_ve.set_resource(prlconsts.PCR_SWAPPAGES, swappages, swappages)
 
+        sdk_ve.commit().wait()
+
         ndisks = sdk_ve.get_devs_count_by_type(prlconsts.PDE_HARD_DISK)
         if ndisks != 1:
             raise Exception("More than one disk in container")
         disk = sdk_ve.get_dev_by_type(prlconsts.PDE_HARD_DISK, 0)
-        disk.resize_image(int(metadata['instance_type_root_gb']) << 10, 0)
-
-        sdk_ve.commit().wait()
+        disk_size = int(metadata['instance_type_root_gb']) << 10
+        disk.resize_image(disk_size, 0).wait()
 
     def spawn(self, context, instance, image_meta, injected_files,
             admin_password, network_info=None, block_device_info=None):
