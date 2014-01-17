@@ -223,12 +223,13 @@ class PCSDriver(driver.ComputeDriver):
         vm_info = sdk_ve.get_state().wait().get_param()
         state = vm_info.get_state()
 
+        self.unplug_vifs(instance, network_info)
+
         # TODO: handle all possible states
         if state == prlconsts.VMS_RUNNING:
             sdk_ve.stop_ex(prlconsts.PSM_ACPI, prlconsts.PSF_FORCE).wait()
         sdk_ve.delete().wait()
 
-        self.unplug_vifs(instance, network_info)
         self.firewall_driver.unfilter_instance(instance,
                                 network_info=network_info)
 
