@@ -58,10 +58,10 @@ class PCSImagesShell(OpenStackImagesShell):
                help='Store to upload image to.')
     @utils.arg('--owner', metavar='<TENANT_ID>',
                help='Store to upload image to.')
-    @utils.arg('--min-disk', metavar='<DISK_GB>',
+    @utils.arg('--min-disk', metavar='<DISK_GB>', type=int,
                help=('Minimum size of disk needed to '
                      'boot image (in gigabytes).'))
-    @utils.arg('--min-ram', metavar='<DISK_RAM>',
+    @utils.arg('--min-ram', metavar='<DISK_RAM>', type=int,
                help=('Minimum amount of ram needed to '
                      'boot image (in megabytes).'))
     @utils.arg('--is-public', metavar='{True,False}',
