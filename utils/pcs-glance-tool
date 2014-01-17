@@ -89,11 +89,11 @@ class PCSImagesShell(OpenStackImagesShell):
                               schema.is_core_property(x[0])),
                              _args))
 
-        fields['disk_format'] = 'ploop'
         if ve.get_vm_type() == prlconsts.PVT_VM:
-            fields['container_format'] = 'pcs-vm'
+            fields['disk_format'] = 'ploop-vm'
         else:
-            fields['container_format'] = 'pcs-container'
+            fields['disk_format'] = 'ploop-container'
+        fields['container_format'] = 'bare'
 
         image = gc.images.create(**fields)
 
