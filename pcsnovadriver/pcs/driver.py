@@ -339,15 +339,26 @@ class PCSDriver(driver.ComputeDriver):
             metadata = {'is_public': False,
                         'status': 'active',
                         'name': snapshot['name'],
-                        'disk_format': 'ploop-container',
                         'container_format': 'bare',
             }
+
+            if tmpl_ve.get_vm_type() == prlconsts.PVT_VM:
+                metadata['disk_format'] = 'ploop-vm'
+            else:
+                metadata['disk_format'] = 'ploop-container'
 
             update_task_state(task_state=task_states.IMAGE_UPLOADING,
                         expected_state=task_states.IMAGE_PENDING_UPLOAD)
 
+            ve_dir = tmpl_ve.get_home_path()
+            if tmpl_ve.get_vm_type() == prlconsts.PVT_VM:
+                # for containers get_home_path returns path
+                # to private area, but for VMs - path to VM
+                # config file.
+                ve_dir = os.path.dirname(ve_dir)
+
             args = shlex.split(utils.get_root_helper()) + \
-                    ['tar', 'cO', '-C', tmpl_ve.get_home_path(), '.']
+                    ['tar', 'cO', '-C', ve_dir, '.']
             LOG.info("Running tar: %r" % args)
             p = subprocess.Popen(args, stdout = subprocess.PIPE)
             snapshot_image_service.update(context, image_id, metadata, p.stdout)
