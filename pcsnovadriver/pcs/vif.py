@@ -96,6 +96,63 @@ class BaseVif:
     def get_bridge_name(self, vif):
             return vif['network']['bridge']
 
+    def get_prl_name(self, sdk_ve, netdev):
+        if sdk_ve.get_vm_type() == prlconsts.PVT_VM:
+            return "vme%08x.%d" % (sdk_ve.get_env_id(), netdev.get_index())
+        else:
+            return "veth%d.%d" % (sdk_ve.get_env_id(), netdev.get_index())
+
+    def get_prl_dev(self, driver, sdk_ve, mac):
+        """Return first network device with given MAC address
+        or None, if it's not found.
+        """
+        mac = format_mac(mac)
+        ndevs = sdk_ve.get_devs_count_by_type(
+                    prlconsts.PDE_GENERIC_NETWORK_ADAPTER)
+        for i in xrange(ndevs):
+            netdev = sdk_ve.get_dev_by_type(
+                            prlconsts.PDE_GENERIC_NETWORK_ADAPTER, i)
+            if netdev.get_emulated_type() == prlconsts.PNA_ROUTED:
+                continue
+            if format_mac(netdev.get_mac_address()) == mac:
+                return netdev
+        else:
+            return None
+
+    def create_prl_dev(self, driver, sdk_ve, vif):
+        """Add network device to VE and set MAC address.
+        Set virtual network to some unexistent value, so that
+        device will not be plugged into any bridged and we can
+        do it by ourselves.
+        """
+        srv_config = driver.psrv.get_srv_config().wait()[0]
+        sdk_ve.begin_edit().wait()
+        netdev = sdk_ve.add_default_device_ex(srv_config,
+                                prlconsts.PDE_GENERIC_NETWORK_ADAPTER)
+        netdev.set_mac_address(vif['address'])
+        netdev.set_virtual_network_id('_fake_unexistent')
+        sdk_ve.commit().wait()
+        return netdev
+
+    def setup_prl_dev(self, driver, sdk_ve, vif):
+        """Sets up device in VE, so that one end will be inside
+        VE with given MAC. Another end - in host with specified
+        device name.
+        """
+        if_name = vif['devname']
+
+        netdev = self.get_prl_dev(driver, sdk_ve, vif['address'])
+        if not netdev:
+            netdev = self.create_prl_dev(driver, sdk_ve, vif)
+        prl_name = self.get_prl_name(sdk_ve, netdev)
+
+        if not linux_net.device_exists(if_name):
+            utils.execute('ip', 'link', 'set', prl_name, 'name',
+                          if_name, run_as_root=True)
+            utils.execute('ip', 'link', 'set', if_name,
+                          'up', run_as_root=True)
+        return netdev
+
 class VifOvsHybrid(BaseVif):
 
     def plug(self, driver, instance, sdk_ve, vif):
@@ -117,16 +174,15 @@ class VifOvsHybrid(BaseVif):
                                         v2_name, iface_id, vif['address'],
                                         instance['uuid'])
 
-        netif = '%s,%s,%s' % (if_name, vif['address'], if_name)
-        out, err = utils.execute('vzctl', 'set', instance['name'], '--save',
-            '--netif_add', netif, run_as_root=True)
-        utils.execute('ip', 'link', 'set', if_name, 'up', run_as_root=True)
+        netdev = self.setup_prl_dev(driver, sdk_ve, vif)
 
         if if_name not in get_bridge_ifaces(br_name):
             utils.execute('brctl', 'addif', br_name, if_name, run_as_root=True)
-        out, err = utils.execute('vzctl', 'set', instance['name'], '--save',
-            '--ifname', if_name, '--host_ifname', if_name,
-            '--dhcp', 'yes', run_as_root=True)
+
+        sdk_ve.begin_edit().wait()
+        netdev.set_configure_with_dhcp(1)
+        netdev.set_auto_apply(1)
+        sdk_ve.commit().wait()
 
     def unplug(self, driver, instance, sdk_ve, vif):
         iface_id = self.get_ovs_interfaceid(vif)
@@ -143,17 +199,15 @@ class VifOvsEthernet(BaseVif):
         iface_id = self.get_ovs_interfaceid(vif)
         if_name = vif['devname']
 
-        netif = '%s,%s,%s' % (if_name, vif['address'], if_name)
-        out, err = utils.execute('vzctl', 'set', instance['name'], '--save',
-                            '--netif_add', netif, run_as_root=True)
-        utils.execute('ip', 'link', 'set', if_name, 'up', run_as_root=True)
+        netdev = self.setup_prl_dev(driver, sdk_ve, vif)
 
         linux_net.create_ovs_vif_port(self.get_bridge_name(vif),
                                         if_name, iface_id, vif['address'],
                                         instance['uuid'])
-        out, err = utils.execute('vzctl', 'set', instance['name'], '--save',
-            '--ifname', if_name, '--host_ifname', if_name,
-            '--dhcp', 'yes', run_as_root=True)
+        sdk_ve.begin_edit().wait()
+        netdev.set_configure_with_dhcp(1)
+        netdev.set_auto_apply(1)
+        sdk_ve.commit().wait()
 
     def unplug(self, driver, instance, sdk_ve, vif):
         linux_net.delete_ovs_vif_port(self.get_bridge_name(vif), vif['devname'])
