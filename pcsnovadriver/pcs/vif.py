@@ -1,6 +1,7 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 
 import os
+import re
 
 from oslo.config import cfg
 
@@ -17,6 +18,31 @@ prlsdkapi = None
 
 def get_bridge_ifaces(bridge):
     return os.listdir(os.path.join('/sys', 'class', 'net', bridge, 'brif'))
+
+def format_mac(raw_mac):
+	"""
+	convert mac to format XX:XX:XX:XX:XX:XX
+	(with upper-case symbols)
+	"""
+
+	if not raw_mac:
+		return None
+
+	if re.match("(?:[0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}", raw_mac):
+		# Windows-like XX-XX-XX-XX-XX-XX
+		return raw_mac.replace("-", ":").upper()
+	elif re.match("(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", raw_mac):
+		# *nix XX:XX:XX:XX:XX:XX
+		return raw_mac.upper()
+	elif re.match("[0-9a-fA-F]{12}", raw_mac):
+		# parallels-like XXXXXXXXXXXX
+		mac = ""
+		for byte_num in range(6):
+			mac += raw_mac[byte_num * 2:byte_num * 2 + 2] + ':'
+		mac = mac[:-1]
+		return mac.upper()
+	else:
+		raise Exception("'%s' is not a mac-address" % raw_mac)
 
 class PCSVIFDriver(object):
 
