@@ -135,27 +135,33 @@ class PCSDriver(driver.ComputeDriver):
             raise
         return ve
 
+    def _plug_vifs(self, instance, sdk_ve, network_info):
+        #TODO: tune network using prlsdkapi instead of
+        # vzctl and then enable networking for VMs
+        if sdk_ve.get_vm_type() == prlconsts.PVT_VM:
+            return
+        for vif in network_info:
+            self.vif_driver.plug(self, instance, sdk_ve, vif)
+
     def plug_vifs(self, instance, network_info):
         LOG.info("plug_vifs: %s" % instance['name'])
         if not self.instance_exists(instance['name']):
             return
+        sdk_ve = self._get_ve_by_name(instance['name'])
+        self._plug_vifs(instance, sdk_ve, network_info)
+
+    def _unplug_vifs(self, instance, sdk_ve, network_info):
         #TODO: tune network using prlsdkapi instead of
         # vzctl and then enable networking for VMs
-        sdk_ve = self._get_ve_by_name(instance['name'])
         if sdk_ve.get_vm_type() == prlconsts.PVT_VM:
             return
         for vif in network_info:
-            self.vif_driver.plug(self, instance, vif)
+            self.vif_driver.unplug(self, instance, sdk_ve, vif)
 
     def unplug_vifs(self, instance, network_info):
         LOG.info("unplug_vifs: %s" % instance['name'])
         sdk_ve = self._get_ve_by_name(instance['name'])
-        if sdk_ve.get_vm_type() == prlconsts.PVT_VM:
-            return
-        #TODO: tune network using prlsdkapi instead of
-        # vzctl and then enable networking for VMs
-        for vif in network_info:
-            self.vif_driver.unplug(self, instance, vif)
+        self._unplug_vifs(instance, sdk_ve, network_info)
 
     def _format_system_metadata(self, instance):
         res = {}
@@ -206,7 +212,7 @@ class PCSDriver(driver.ComputeDriver):
         sdk_ve.start_ex(prlconsts.PSM_VM_START,
                     prlconsts.PNSF_VM_START_WAIT).wait()
 
-        self.plug_vifs(instance, network_info)
+        self._plug_vifs(instance, sdk_ve, network_info)
         self.firewall_driver.setup_basic_filtering(instance, network_info)
         self.firewall_driver.prepare_instance_filter(instance, network_info)
 
@@ -223,7 +229,7 @@ class PCSDriver(driver.ComputeDriver):
         vm_info = sdk_ve.get_state().wait().get_param()
         state = vm_info.get_state()
 
-        self.unplug_vifs(instance, network_info)
+        self._unplug_vifs(instance, sdk_ve, network_info)
 
         # TODO: handle all possible states
         if state == prlconsts.VMS_RUNNING:
@@ -264,7 +270,7 @@ class PCSDriver(driver.ComputeDriver):
         else:
             sdk_ve.stop_ex(prlconsts.PSM_ACPI, prlconsts.PSF_FORCE).wait()
             sdk_ve.start().wait()
-        self.plug_vifs(instance, network_info)
+        self._plug_vifs(instance, sdk_ve, network_info)
 
     def suspend(self, instance):
         LOG.info("suspend %s" % instance['name'])
@@ -275,7 +281,7 @@ class PCSDriver(driver.ComputeDriver):
         LOG.info("resume %s" % instance['name'])
         sdk_ve = self._get_ve_by_name(instance['name'])
         sdk_ve.resume().wait()
-        self.plug_vifs(instance, network_info)
+        self._plug_vifs(instance, sdk_ve, network_info)
 
     def power_off(self, instance):
         LOG.info("power_off %s" % instance['name'])
@@ -287,8 +293,8 @@ class PCSDriver(driver.ComputeDriver):
         LOG.info("power_on %s" % instance['name'])
         sdk_ve = self._get_ve_by_name(instance['name'])
         sdk_ve.start().wait()
-        self.unplug_vifs(instance, network_info)
-        self.plug_vifs(instance, network_info)
+        self.unplug_vifs(instance, sdk_ve, network_info)
+        self._plug_vifs(instance, sdk_ve, network_info)
 
     def get_vnc_console(self, instance):
         LOG.info("get_vnc_console %s" % instance['name'])
