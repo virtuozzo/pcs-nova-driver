@@ -13,11 +13,19 @@ from nova import utils
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
+prlsdkapi = None
 
 def get_bridge_ifaces(bridge):
     return os.listdir(os.path.join('/sys', 'class', 'net', bridge, 'brif'))
 
 class PCSVIFDriver(object):
+
+    def __init__(self):
+        global prlsdkapi
+        global prlconsts
+        if prlsdkapi is None:
+            prlsdkapi = __import__('prlsdkapi')
+            prlconsts = prlsdkapi.consts
 
     def get_firewall_required(self):
         if CONF.firewall_driver != "nova.virt.firewall.NoopFirewallDriver":
