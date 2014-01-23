@@ -71,6 +71,14 @@ def get_sdk_errcode(strerr):
     lib_err = getattr(prlsdkapi.prlsdk.errors, strerr)
     return prlsdkapi.conv_error(lib_err)
 
+firewall_msg = """nova's firewall deprecated, please 
+set it to nova.virt.firewall.NoopFirewallDriver and 
+use neutron's firewall. Edit /etc/neutron/plugin.conf
+and set
+firewall_driver=pcsnovadriver.neutron.pcs_firewall.PCSIptablesFirewallDriver
+in [SECURITYGROUP] section.
+"""
+
 class PCSDriver(driver.ComputeDriver):
 
     def __init__(self, virtapi, read_only=False):
@@ -87,6 +95,8 @@ class PCSDriver(driver.ComputeDriver):
         self.host = None
         self._host_state = None
 
+        if CONF.firewall_driver != "nova.virt.firewall.NoopFirewallDriver":
+            raise NotImplementedError(firewall_msg)
         self.firewall_driver = firewall.load_driver(None, self.virtapi)
         self.vif_driver = PCSVIFDriver()
 

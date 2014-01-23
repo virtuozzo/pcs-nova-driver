@@ -66,9 +66,11 @@ class PCSVIFDriver(object):
             prlconsts = prlsdkapi.consts
 
     def get_firewall_required(self):
-        if CONF.firewall_driver != "nova.virt.firewall.NoopFirewallDriver":
-            return True
-        return False
+        """Nova's firewall is deprecated, let's assume, that we
+        always use neutron's firewall and connect instances to
+        integration bridge via intermediate linux bridge.
+        """
+        return True
 
     def _get_vif_class(self, instance, vif):
         if vif['type'] is None:
