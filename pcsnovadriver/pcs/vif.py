@@ -44,6 +44,18 @@ def format_mac(raw_mac):
 	else:
 		raise Exception("'%s' is not a mac-address" % raw_mac)
 
+def pcs_create_ovs_vif_port(bridge, dev, iface_id, iface_name,
+                            mac, instance_id):
+    utils.execute('ovs-vsctl', '--', '--may-exist', 'add-port',
+                  bridge, dev,
+                  '--', 'set', 'Interface', dev,
+                  'external-ids:iface-id=%s' % iface_id,
+                  'external-ids:iface-name=%s' % iface_name,
+                  'external-ids:iface-status=active',
+                  'external-ids:attached-mac=%s' % mac,
+                  'external-ids:vm-uuid=%s' % instance_id,
+                  run_as_root=True)
+
 class PCSVIFDriver(object):
 
     def __init__(self):
@@ -147,9 +159,7 @@ class BaseVif:
         prl_name = self.get_prl_name(sdk_ve, netdev)
 
         if not linux_net.device_exists(if_name):
-            utils.execute('ip', 'link', 'set', prl_name, 'name',
-                          if_name, run_as_root=True)
-            utils.execute('ip', 'link', 'set', if_name,
+            utils.execute('ip', 'link', 'set', prl_name,
                           'up', run_as_root=True)
         return netdev
 
@@ -166,15 +176,17 @@ class VifOvsHybrid(BaseVif):
             utils.execute('brctl', 'setfd', br_name, 0, run_as_root=True)
             utils.execute('brctl', 'stp', br_name, 'off', run_as_root=True)
 
+        netdev = self.setup_prl_dev(driver, sdk_ve, vif)
+        prl_name = self.get_prl_name(sdk_ve, netdev)
+        if_name = prl_name
+
         if not linux_net.device_exists(v2_name):
             linux_net._create_veth_pair(v1_name, v2_name)
             utils.execute('ip', 'link', 'set', br_name, 'up', run_as_root=True)
             utils.execute('brctl', 'addif', br_name, v1_name, run_as_root=True)
-            linux_net.create_ovs_vif_port(self.get_bridge_name(vif),
-                                        v2_name, iface_id, vif['address'],
-                                        instance['uuid'])
-
-        netdev = self.setup_prl_dev(driver, sdk_ve, vif)
+            pcs_create_ovs_vif_port(self.get_bridge_name(vif), v2_name,
+                                    iface_id, prl_name, vif['address'],
+                                    instance['uuid'])
 
         if if_name not in get_bridge_ifaces(br_name):
             utils.execute('brctl', 'addif', br_name, if_name, run_as_root=True)
@@ -189,6 +201,9 @@ class VifOvsHybrid(BaseVif):
         br_name = self.get_br_name(vif['id'])
         v1_name, v2_name = self.get_veth_pair_names(vif['id'])
 
+        netdev = self.get_prl_dev(driver, sdk_ve, vif['address'])
+        prl_name = self.get_prl_name(sdk_ve, netdev)
+
         linux_net.delete_ovs_vif_port(self.get_bridge_name(vif), v2_name)
         utils.execute('ip', 'link', 'set', br_name, 'down', run_as_root=True)
         utils.execute('brctl', 'delbr', br_name, run_as_root=True)
@@ -201,8 +216,9 @@ class VifOvsEthernet(BaseVif):
 
         netdev = self.setup_prl_dev(driver, sdk_ve, vif)
 
+        prl_name = self.get_prl_name(sdk_ve, netdev)
         linux_net.create_ovs_vif_port(self.get_bridge_name(vif),
-                                        if_name, iface_id, vif['address'],
+                                        prl_name, iface_id, vif['address'],
                                         instance['uuid'])
         sdk_ve.begin_edit().wait()
         netdev.set_configure_with_dhcp(1)
@@ -210,4 +226,6 @@ class VifOvsEthernet(BaseVif):
         sdk_ve.commit().wait()
 
     def unplug(self, driver, instance, sdk_ve, vif):
-        linux_net.delete_ovs_vif_port(self.get_bridge_name(vif), vif['devname'])
+        netdev = self.get_prl_dev(driver, sdk_ve, vif['address'])
+        prl_name = self.get_prl_name(sdk_ve, netdev)
+        linux_net.delete_ovs_vif_port(self.get_bridge_name(vif), prl_name)
