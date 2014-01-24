@@ -12,8 +12,16 @@ from nova.network import model as network_model
 from nova.openstack.common import log as logging
 from nova import utils
 
-LOG = logging.getLogger(__name__)
+pcs_vif_opts = [
+    cfg.BoolOpt('pcs_use_dhcp',
+                default = False,
+                help = 'Use DHCP agent for network configuration.'),
+    ]
+
 CONF = cfg.CONF
+CONF.register_opts(pcs_vif_opts)
+
+LOG = logging.getLogger(__name__)
 prlsdkapi = None
 
 def get_bridge_ifaces(bridge):
@@ -165,6 +173,40 @@ class BaseVif:
                           'up', run_as_root=True)
         return netdev
 
+    def configure_ip(self, sdk_ve, netdev, vif):
+        """Configure IP parameters inside VE
+        """
+        sdk_ve.begin_edit().wait()
+        if CONF.pcs_use_dhcp:
+            netdev.set_configure_with_dhcp(1)
+        else:
+            if len(vif['network']['subnets']) != 1:
+                raise NotImplementedError(
+                        "Only one subnet per vif is supported.")
+            subnet = vif['network']['subnets'][0]
+
+            # Disable DHCP
+            netdev.set_configure_with_dhcp(1)
+
+            # Setup IP addresses
+            iplist = prlsdkapi.StringList()
+            for ip in subnet['ips']:
+                prefix = subnet['cidr'].split('/')[1]
+                if ip['type'] != 'fixed':
+                    raise NotImplementedError("Only fixed IPs are supported.")
+                iplist.add_item("%s/%s" % (ip['address'], prefix))
+            netdev.set_net_addresses(iplist)
+
+            # Setup gateway
+            if subnet['gateway']:
+                gw = subnet['gateway']
+                if gw['type'] != 'gateway':
+                    raise NotImplementedError(
+                            "Only 'gateway' type gateways are supported.")
+                netdev.set_default_gateway(gw['address'])
+        netdev.set_auto_apply(1)
+        sdk_ve.commit().wait()
+
 class VifOvsHybrid(BaseVif):
 
     def plug(self, driver, instance, sdk_ve, vif):
@@ -193,10 +235,7 @@ class VifOvsHybrid(BaseVif):
         if if_name not in get_bridge_ifaces(br_name):
             utils.execute('brctl', 'addif', br_name, if_name, run_as_root=True)
 
-        sdk_ve.begin_edit().wait()
-        netdev.set_configure_with_dhcp(1)
-        netdev.set_auto_apply(1)
-        sdk_ve.commit().wait()
+        self.configure_ip(sdk_ve, netdev, vif)
 
     def unplug(self, driver, instance, sdk_ve, vif):
         iface_id = self.get_ovs_interfaceid(vif)
@@ -222,10 +261,7 @@ class VifOvsEthernet(BaseVif):
         linux_net.create_ovs_vif_port(self.get_bridge_name(vif),
                                         prl_name, iface_id, vif['address'],
                                         instance['uuid'])
-        sdk_ve.begin_edit().wait()
-        netdev.set_configure_with_dhcp(1)
-        netdev.set_auto_apply(1)
-        sdk_ve.commit().wait()
+        self.configure_ip(sdk_ve, netdev, vif)
 
     def unplug(self, driver, instance, sdk_ve, vif):
         netdev = self.get_prl_dev(driver, sdk_ve, vif['address'])
