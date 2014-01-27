@@ -3,3 +3,6 @@ represents the internal development branch of the Parallels engineering
 organisation and, as such, should be considered a snapshot of unreleased code
 provided for reference only.  To receive fully tested and packaged production
 code, please contact the same source you obtained Parallels Cloud Server from.
+
+Here are installation instructions:
+https://github.com/dmitry-guryanov/pcs-nova-driver/wiki/Installation-HowTo
