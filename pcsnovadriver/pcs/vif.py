@@ -17,6 +17,7 @@
 
 import os
 import re
+import netaddr
 
 from oslo.config import cfg
 
@@ -41,31 +42,6 @@ prlsdkapi = None
 
 def get_bridge_ifaces(bridge):
     return os.listdir(os.path.join('/sys', 'class', 'net', bridge, 'brif'))
-
-def format_mac(raw_mac):
-	"""
-	convert mac to format XX:XX:XX:XX:XX:XX
-	(with upper-case symbols)
-	"""
-
-	if not raw_mac:
-		return None
-
-	if re.match("(?:[0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}", raw_mac):
-		# Windows-like XX-XX-XX-XX-XX-XX
-		return raw_mac.replace("-", ":").upper()
-	elif re.match("(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", raw_mac):
-		# *nix XX:XX:XX:XX:XX:XX
-		return raw_mac.upper()
-	elif re.match("[0-9a-fA-F]{12}", raw_mac):
-		# parallels-like XXXXXXXXXXXX
-		mac = ""
-		for byte_num in range(6):
-			mac += raw_mac[byte_num * 2:byte_num * 2 + 2] + ':'
-		mac = mac[:-1]
-		return mac.upper()
-	else:
-		raise Exception("'%s' is not a mac-address" % raw_mac)
 
 def pcs_create_ovs_vif_port(bridge, dev, iface_id, iface_name,
                             mac, instance_id):
@@ -152,7 +128,7 @@ class BaseVif:
         """Return first network device with given MAC address
         or None, if it's not found.
         """
-        mac = format_mac(mac)
+        mac = netaddr.EUI(mac)
         ndevs = sdk_ve.get_devs_count_by_type(
                     prlconsts.PDE_GENERIC_NETWORK_ADAPTER)
         for i in xrange(ndevs):
@@ -160,7 +136,7 @@ class BaseVif:
                             prlconsts.PDE_GENERIC_NETWORK_ADAPTER, i)
             if netdev.get_emulated_type() == prlconsts.PNA_ROUTED:
                 continue
-            if format_mac(netdev.get_mac_address()) == mac:
+            if netaddr.EUI(netdev.get_mac_address()) == mac:
                 return netdev
         else:
             return None
@@ -175,7 +151,9 @@ class BaseVif:
         sdk_ve.begin_edit().wait()
         netdev = sdk_ve.add_default_device_ex(srv_config,
                                 prlconsts.PDE_GENERIC_NETWORK_ADAPTER)
-        netdev.set_mac_address(vif['address'])
+        mac = netaddr.EUI(vif['address'])
+        mac.dialect = netaddr.mac_bare
+        netdev.set_mac_address(str(mac))
         netdev.set_virtual_network_id('_fake_unexistent')
         sdk_ve.commit().wait()
         return netdev
@@ -215,10 +193,10 @@ class BaseVif:
             # Setup IP addresses
             iplist = prlsdkapi.StringList()
             for ip in subnet['ips']:
-                prefix = subnet['cidr'].split('/')[1]
+                cidr = netaddr.IPNetwork(subnet['cidr'])
                 if ip['type'] != 'fixed':
                     raise NotImplementedError("Only fixed IPs are supported.")
-                iplist.add_item("%s/%s" % (ip['address'], prefix))
+                iplist.add_item("%s/%s" % (ip['address'], cidr.prefixlen))
             netdev.set_net_addresses(iplist)
 
             # Setup gateway
