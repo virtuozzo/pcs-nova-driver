@@ -109,6 +109,15 @@ class PCSVIFDriver(object):
             raise exception.NovaException(
                 _("Unexpected vif_type=%s") % vif_type)
 
+    def setup_dev(self, driver, instance, sdk_ve, vif):
+        """
+        This method is called before VE start and should
+        do all work, that can't be done on running VE.
+        """
+        LOG.info("vif.setup_dev: %s:%s" % (instance['name'], vif['devname']))
+        vif_class = self._get_vif_class(instance, vif)
+        vif_class.setup_dev(driver, instance, sdk_ve, vif)
+
     def plug(self, driver, instance, sdk_ve, vif):
         LOG.info("plug: %s:%s" % (instance['name'], vif['devname']))
         vif_class = self._get_vif_class(instance, vif)
@@ -224,6 +233,9 @@ class BaseVif:
 
 class VifOvsHybrid(BaseVif):
 
+    def setup_dev(self, driver, instance, sdk_ve, vif):
+        netdev = self.create_prl_dev(driver, sdk_ve, vif)
+
     def plug(self, driver, instance, sdk_ve, vif):
         iface_id = self.get_ovs_interfaceid(vif)
         if_name = vif['devname']
@@ -252,6 +264,12 @@ class VifOvsHybrid(BaseVif):
 
         self.configure_ip(sdk_ve, netdev, vif)
 
+        if sdk_ve.get_vm_type() == prlconsts.PVT_VM and \
+                if_name not in get_bridge_ifaces(br_name):
+            # FIXME: dispatcher removes interface from bridge after
+            # changing configuration
+            utils.execute('brctl', 'addif', br_name, if_name, run_as_root=True)
+
     def unplug(self, driver, instance, sdk_ve, vif):
         iface_id = self.get_ovs_interfaceid(vif)
         br_name = self.get_br_name(vif['id'])
@@ -265,6 +283,9 @@ class VifOvsHybrid(BaseVif):
         utils.execute('brctl', 'delbr', br_name, run_as_root=True)
 
 class VifOvsEthernet(BaseVif):
+
+    def setup_dev(self, driver, instance, sdk_ve, vif):
+        netdev = self.create_prl_dev(driver, sdk_ve, vif)
 
     def plug(self, driver, instance, sdk_ve, vif):
         iface_id = self.get_ovs_interfaceid(vif)

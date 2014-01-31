@@ -162,10 +162,6 @@ class PCSDriver(driver.ComputeDriver):
         return ve
 
     def _plug_vifs(self, instance, sdk_ve, network_info):
-        #TODO: tune network using prlsdkapi instead of
-        # vzctl and then enable networking for VMs
-        if sdk_ve.get_vm_type() == prlconsts.PVT_VM:
-            return
         for vif in network_info:
             self.vif_driver.plug(self, instance, sdk_ve, vif)
 
@@ -177,10 +173,6 @@ class PCSDriver(driver.ComputeDriver):
         self._plug_vifs(instance, sdk_ve, network_info)
 
     def _unplug_vifs(self, instance, sdk_ve, network_info):
-        #TODO: tune network using prlsdkapi instead of
-        # vzctl and then enable networking for VMs
-        if sdk_ve.get_vm_type() == prlconsts.PVT_VM:
-            return
         for vif in network_info:
             self.vif_driver.unplug(self, instance, sdk_ve, vif)
 
@@ -235,6 +227,9 @@ class PCSDriver(driver.ComputeDriver):
         sdk_ve = tmpl.create_instance(self.psrv, instance)
 
         self._apply_flavor(instance, sdk_ve)
+        self._reset_network(sdk_ve)
+        for vif in network_info:
+            self.vif_driver.setup_dev(self, instance, sdk_ve, vif)
         sdk_ve.start_ex(prlconsts.PSM_VM_START,
                     prlconsts.PNSF_VM_START_WAIT).wait()
 
