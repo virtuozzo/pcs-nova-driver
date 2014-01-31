@@ -325,8 +325,7 @@ class PCSDriver(driver.ComputeDriver):
             sdk_ve.begin_edit().wait()
             sdk_ve.set_vncmode(prlconsts.PRD_AUTO)
             sdk_ve.commit().wait()
-            # need to update ve config
-            sdk_ve = self._get_ve_by_name(instance['name'])
+            sdk_ve.refresh_config()
 
         sleep_time = 0.5
         for attempt in xrange(5):
@@ -337,7 +336,7 @@ class PCSDriver(driver.ComputeDriver):
                 break
             time.sleep(sleep_time)
             sleep_time = sleep_time * 2
-            sdk_ve = self._get_ve_by_name(instance['name'])
+            sdk_ve.refresh_config()
 
         return {'host': self.host, 'port': port, 'internal_access_path': None}
 
