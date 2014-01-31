@@ -193,10 +193,10 @@ class BaseVif:
             # Setup IP addresses
             iplist = prlsdkapi.StringList()
             for ip in subnet['ips']:
-                prefix = subnet['cidr'].split('/')[1]
+                cidr = netaddr.IPNetwork(subnet['cidr'])
                 if ip['type'] != 'fixed':
                     raise NotImplementedError("Only fixed IPs are supported.")
-                iplist.add_item("%s/%s" % (ip['address'], prefix))
+                iplist.add_item("%s/%s" % (ip['address'], cidr.prefixlen))
             netdev.set_net_addresses(iplist)
 
             # Setup gateway
