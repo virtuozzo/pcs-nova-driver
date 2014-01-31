@@ -314,7 +314,7 @@ class PCSDriver(driver.ComputeDriver):
         LOG.info("power_on %s" % instance['name'])
         sdk_ve = self._get_ve_by_name(instance['name'])
         sdk_ve.start().wait()
-        self.unplug_vifs(instance, sdk_ve, network_info)
+        self._unplug_vifs(instance, sdk_ve, network_info)
         self._plug_vifs(instance, sdk_ve, network_info)
 
     def get_vnc_console(self, instance):
