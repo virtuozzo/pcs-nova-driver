@@ -21,6 +21,7 @@ import tempfile
 import subprocess
 import shlex
 import shutil
+import time
 
 from oslo.config import cfg
 
@@ -332,7 +333,17 @@ class PCSDriver(driver.ComputeDriver):
             # need to update ve config
             sdk_ve = self._get_ve_by_name(instance['name'])
 
-        port = sdk_ve.get_vncport()
+        sleep_time = 0.5
+        for attempt in xrange(5):
+            #FIXME: it's possible a bug in dispatcher: sometimes when
+            # you setup VNC, port still 0 for some short time.
+            port = sdk_ve.get_vncport()
+            if port:
+                break
+            time.sleep(sleep_time)
+            sleep_time = sleep_time * 2
+            sdk_ve = self._get_ve_by_name(instance['name'])
+
         return {'host': self.host, 'port': port, 'internal_access_path': None}
 
     def _reset_network(self, sdk_ve):
