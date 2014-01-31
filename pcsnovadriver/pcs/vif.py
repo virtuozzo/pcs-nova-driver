@@ -151,7 +151,9 @@ class BaseVif:
         sdk_ve.begin_edit().wait()
         netdev = sdk_ve.add_default_device_ex(srv_config,
                                 prlconsts.PDE_GENERIC_NETWORK_ADAPTER)
-        netdev.set_mac_address(vif['address'])
+        mac = netaddr.EUI(vif['address'])
+        mac.dialect = netaddr.mac_bare
+        netdev.set_mac_address(str(mac))
         netdev.set_virtual_network_id('_fake_unexistent')
         sdk_ve.commit().wait()
         return netdev
