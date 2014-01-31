@@ -21,6 +21,7 @@ import tempfile
 import subprocess
 import shlex
 import shutil
+import time
 
 from oslo.config import cfg
 
@@ -161,10 +162,6 @@ class PCSDriver(driver.ComputeDriver):
         return ve
 
     def _plug_vifs(self, instance, sdk_ve, network_info):
-        #TODO: tune network using prlsdkapi instead of
-        # vzctl and then enable networking for VMs
-        if sdk_ve.get_vm_type() == prlconsts.PVT_VM:
-            return
         for vif in network_info:
             self.vif_driver.plug(self, instance, sdk_ve, vif)
 
@@ -176,10 +173,6 @@ class PCSDriver(driver.ComputeDriver):
         self._plug_vifs(instance, sdk_ve, network_info)
 
     def _unplug_vifs(self, instance, sdk_ve, network_info):
-        #TODO: tune network using prlsdkapi instead of
-        # vzctl and then enable networking for VMs
-        if sdk_ve.get_vm_type() == prlconsts.PVT_VM:
-            return
         for vif in network_info:
             self.vif_driver.unplug(self, instance, sdk_ve, vif)
 
@@ -234,6 +227,9 @@ class PCSDriver(driver.ComputeDriver):
         sdk_ve = tmpl.create_instance(self.psrv, instance)
 
         self._apply_flavor(instance, sdk_ve)
+        self._reset_network(sdk_ve)
+        for vif in network_info:
+            self.vif_driver.setup_dev(self, instance, sdk_ve, vif)
         sdk_ve.start_ex(prlconsts.PSM_VM_START,
                     prlconsts.PNSF_VM_START_WAIT).wait()
 
@@ -329,10 +325,20 @@ class PCSDriver(driver.ComputeDriver):
             sdk_ve.begin_edit().wait()
             sdk_ve.set_vncmode(prlconsts.PRD_AUTO)
             sdk_ve.commit().wait()
+            # need to update ve config
+            sdk_ve = self._get_ve_by_name(instance['name'])
 
-        # need to update ve config
-        sdk_ve = self._get_ve_by_name(instance['name'])
-        port = sdk_ve.get_vncport()
+        sleep_time = 0.5
+        for attempt in xrange(5):
+            #FIXME: it's possible a bug in dispatcher: sometimes when
+            # you setup VNC, port still 0 for some short time.
+            port = sdk_ve.get_vncport()
+            if port:
+                break
+            time.sleep(sleep_time)
+            sleep_time = sleep_time * 2
+            sdk_ve = self._get_ve_by_name(instance['name'])
+
         return {'host': self.host, 'port': port, 'internal_access_path': None}
 
     def _reset_network(self, sdk_ve):
