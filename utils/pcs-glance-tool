@@ -55,6 +55,15 @@ class PCSImagesShell(OpenStackImagesShell):
             srv.login(login, passwd)
         return srv
 
+    def _get_ct_boot_disk(self, ve):
+        """
+        Get first disk in config.
+        """
+        hdd_count = ve.get_devs_count_by_type(prlconsts.PDE_HARD_DISK)
+        if hdd_count < 1:
+            raise Exception("There are no hard disks in VE.")
+        return ve.get_dev_by_type(prlconsts.PDE_HARD_DISK, 0)
+
     @utils.arg('ve_name', metavar='<VE_NAME>',
                help='Name or UUID of VM.')
     @utils.arg('--name', metavar='<NAME>',
@@ -109,11 +118,7 @@ class PCSImagesShell(OpenStackImagesShell):
                               prlconsts.PCVF_CLONE_TO_TEMPLATE)
             image_ve = job.wait().get_param()
 
-            # get first hdd
-            hdd_count = image_ve.get_devs_count_by_type(prlconsts.PDE_HARD_DISK)
-            if hdd_count < 1:
-                raise Exception("There are no hard disks in VE.")
-            hdd = image_ve.get_dev_by_type(prlconsts.PDE_HARD_DISK, 0)
+            hdd = self._get_ct_boot_disk(image_ve)
             hdd_path = hdd.get_image_path()
             xml_path = os.path.join(hdd_path, "DiskDescriptor.xml")
             cmd = "ploop snapshot-list -H -o fname %s" % xml_path
