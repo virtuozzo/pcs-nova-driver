@@ -61,6 +61,9 @@ pcs_opts = [
 CONF = cfg.CONF
 CONF.register_opts(pcs_opts)
 
+# FIXME: add this constant to prlsdkapi
+PRL_PRIVILEGED_GUEST_OS_SESSION = "531582ac-3dce-446f-8c26-dd7e3384dcf4"
+
 def pcs_init_state_map():
     global PCS_POWER_STATE
     PCS_POWER_STATE = {
@@ -212,6 +215,16 @@ class PCSDriver(driver.ComputeDriver):
         disk_size = int(metadata['instance_type_root_gb']) << 10
         disk.resize_image(disk_size, 0).wait()
 
+    def _set_admin_password(self, sdk_ve, admin_password):
+        if sdk_ve.get_vm_type() == prlconsts.PVT_VM:
+            # FIXME: waiting for system boot is broken for VMs
+            LOG.info("Skip setting admin password")
+            return
+        session = sdk_ve.login_in_guest(
+                PRL_PRIVILEGED_GUEST_OS_SESSION, '', 0).wait()[0]
+        session.set_user_passwd('root', admin_password, 0).wait()
+        session.logout(0)
+
     def spawn(self, context, instance, image_meta, injected_files,
             admin_password, network_info=None, block_device_info=None):
         LOG.info("spawn: %s" % instance['name'])
@@ -234,6 +247,8 @@ class PCSDriver(driver.ComputeDriver):
                     prlconsts.PNSF_VM_START_WAIT).wait()
 
         self._plug_vifs(instance, sdk_ve, network_info)
+        self._set_admin_password(sdk_ve, admin_password)
+
         self.firewall_driver.setup_basic_filtering(instance, network_info)
         self.firewall_driver.prepare_instance_filter(instance, network_info)
 
@@ -445,6 +460,11 @@ class PCSDriver(driver.ComputeDriver):
         LOG.info("ensure_filtering_rules_for_instance %s" % instance['name'])
         self.firewall_driver.setup_basic_filtering(instance, network_info)
         self.firewall_driver.prepare_instance_filter(instance, network_info)
+
+    def set_admin_password(self, context, instance_id, new_pass=None):
+        LOG.info("set_admin_password %s %s" % (instance_id, new_pass))
+        sdk_ve = self._get_ve_by_name(instance_id)
+        self._set_admin_password(sdk_ve, new_pass)
 
 class HostState(object):
     def __init__(self, driver):
