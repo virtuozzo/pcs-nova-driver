@@ -512,7 +512,7 @@ def get_template(driver, context, image_ref, user_id, project_id):
         if image_info['disk_format'] == 'ez-template':
             return EzTemplate(driver, context, image_ref, user_id, project_id)
         elif image_info['disk_format'] in ['ploop-container', 'ploop-vm']:
-            return GoldenImageTemplate(driver, context, image_ref, user_id, project_id)
+            return PloopTemplate(driver, context, image_ref, user_id, project_id)
         else:
             raise Exception("Unsupported disk format: %s" % \
                                     image_info['disk_format'])
@@ -637,10 +637,10 @@ class EzTemplate:
         sdk_ve.reg('', True).wait()
         return sdk_ve
 
-class GoldenImageTemplate(PCSTemplate):
+class PloopTemplate(PCSTemplate):
 
     def __init__(self, driver, context, image_ref, user_id, project_id):
-        LOG.info("GoldenImageTemplate.__init__")
+        LOG.info("PloopImageTemplate.__init__")
         self.user_id = user_id
         self.project_id = project_id
         self.driver = driver
