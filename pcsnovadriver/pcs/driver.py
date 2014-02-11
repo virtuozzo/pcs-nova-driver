@@ -61,6 +61,9 @@ pcs_opts = [
 CONF = cfg.CONF
 CONF.register_opts(pcs_opts)
 
+# FIXME: add this constant to prlsdkapi
+PRL_PRIVILEGED_GUEST_OS_SESSION = "531582ac-3dce-446f-8c26-dd7e3384dcf4"
+
 def pcs_init_state_map():
     global PCS_POWER_STATE
     PCS_POWER_STATE = {
@@ -212,6 +215,16 @@ class PCSDriver(driver.ComputeDriver):
         disk_size = int(metadata['instance_type_root_gb']) << 10
         disk.resize_image(disk_size, 0).wait()
 
+    def _set_admin_password(self, sdk_ve, admin_password):
+        if sdk_ve.get_vm_type() == prlconsts.PVT_VM:
+            # FIXME: waiting for system boot is broken for VMs
+            LOG.info("Skip setting admin password")
+            return
+        session = sdk_ve.login_in_guest(
+                PRL_PRIVILEGED_GUEST_OS_SESSION, '', 0).wait()[0]
+        session.set_user_passwd('root', admin_password, 0).wait()
+        session.logout(0)
+
     def spawn(self, context, instance, image_meta, injected_files,
             admin_password, network_info=None, block_device_info=None):
         LOG.info("spawn: %s" % instance['name'])
@@ -234,6 +247,8 @@ class PCSDriver(driver.ComputeDriver):
                     prlconsts.PNSF_VM_START_WAIT).wait()
 
         self._plug_vifs(instance, sdk_ve, network_info)
+        self._set_admin_password(sdk_ve, admin_password)
+
         self.firewall_driver.setup_basic_filtering(instance, network_info)
         self.firewall_driver.prepare_instance_filter(instance, network_info)
 
@@ -446,6 +461,11 @@ class PCSDriver(driver.ComputeDriver):
         self.firewall_driver.setup_basic_filtering(instance, network_info)
         self.firewall_driver.prepare_instance_filter(instance, network_info)
 
+    def set_admin_password(self, context, instance_id, new_pass=None):
+        LOG.info("set_admin_password %s %s" % (instance_id, new_pass))
+        sdk_ve = self._get_ve_by_name(instance_id)
+        self._set_admin_password(sdk_ve, new_pass)
+
 class HostState(object):
     def __init__(self, driver):
         super(HostState, self).__init__()
@@ -492,7 +512,7 @@ def get_template(driver, context, image_ref, user_id, project_id):
         if image_info['disk_format'] == 'ez-template':
             return EzTemplate(driver, context, image_ref, user_id, project_id)
         elif image_info['disk_format'] in ['ploop-container', 'ploop-vm']:
-            return GoldenImageTemplate(driver, context, image_ref, user_id, project_id)
+            return PloopTemplate(driver, context, image_ref, user_id, project_id)
         else:
             raise Exception("Unsupported disk format: %s" % \
                                     image_info['disk_format'])
@@ -617,50 +637,111 @@ class EzTemplate:
         sdk_ve.reg('', True).wait()
         return sdk_ve
 
-class GoldenImageTemplate(PCSTemplate):
+class PloopTemplate(PCSTemplate):
 
     def __init__(self, driver, context, image_ref, user_id, project_id):
-        LOG.info("GoldenImageTemplate.__init__")
+        LOG.info("PloopImageTemplate.__init__")
         self.user_id = user_id
         self.project_id = project_id
         self.driver = driver
 
         (image_service, image_id) = \
             glance.get_remote_image_service(context, image_ref)
-        image_info = image_service.show(context, image_ref)
+        self.image_info = image_service.show(context, image_ref)
         self.image_id = image_id
 
-        if driver.instance_exists("tmpl-%s" % image_id):
-            LOG.info("Using image from cache.")
-        else:
-            LOG.info("Downloading image...")
-            tmpl_path = self._get_image(context, image_id, image_service)
-            self._register_template(tmpl_path)
+        self.tmpl_path = self._get_image(context, image_id, image_service)
 
     def _get_image(self, context, image_id, image_service):
         tmpl_path = os.path.join(CONF.pcs_template_dir, image_id)
         if os.path.exists(tmpl_path):
-            shutil.rmtree(tmpl_path)
+            LOG.info("Using image from cache.")
+            return tmpl_path
+
+        LOG.info("Downloading image...")
         os.mkdir(tmpl_path)
 
-        args = ['tar', 'x', '-C', tmpl_path]
-        LOG.info("Running tar: %r" % args)
-        p = subprocess.Popen(args, stdin = subprocess.PIPE)
+        image_name = self.image_info['properties']['pcs_image_name']
+        with open(os.path.join(tmpl_path, image_name), 'w') as f:
+            image_service.download(context, image_id, f)
+        with open(os.path.join(tmpl_path, 'DiskDescriptor.xml'), 'w') as f:
+            f.write(self.image_info['properties']['pcs_disk_descriptor'])
 
-        image_service.download(context, image_id, data=p.stdin)
-        p.stdin.close()
-
-        ret = p.wait()
-        if ret:
-            raise Exception("tar returned %d" % ret)
-
-        LOG.info(_("Golden image download complete"))
         return tmpl_path
 
-    def _register_template(self, tmpl_path):
-        self.driver.psrv.register_vm(tmpl_path, True).wait()
+    def _create_ct(self, psrv, instance):
+        sdk_ve = psrv.get_default_vm_config(
+                        prlsdkapi.consts.PVT_CT, 'vswap.1024MB', 0, 0).wait()[0]
+        sdk_ve.set_uuid(instance['uuid'])
+        sdk_ve.set_name(instance['name'])
+        sdk_ve.set_vm_type(prlsdkapi.consts.PVT_CT)
+        sdk_ve.set_os_template(self.image_info['properties']['pcs_ostemplate'])
+        LOG.info("Creating container from eztemplate ...")
+        sdk_ve.reg('', True).wait()
+
+        disk_path = sdk_ve.get_home_path()
+        disk_path = os.path.join(disk_path, 'root.hdd')
+        LOG.info("Removing original disk ...")
+        utils.execute('rm', '-rf', disk_path, run_as_root = True)
+        LOG.info("Copying image disk ...")
+        utils.execute('cp', '-rf', self.tmpl_path, disk_path,
+                                        run_as_root = True)
+        LOG.info("Done")
+        return sdk_ve
+
+    def _create_vm(self, psrv, instance):
+        # create an empty VM
+        sdk_ve = psrv.create_vm()
+        srv_cfg = psrv.get_srv_config().wait().get_param()
+        os_ver = getattr(prlconsts, "PVS_GUEST_VER_LIN_REDHAT")
+        sdk_ve.set_default_config(srv_cfg, os_ver, True)
+        sdk_ve.set_uuid('{%s}' % instance['uuid'])
+        sdk_ve.set_name(instance['name'])
+        sdk_ve.set_vm_type(prlsdkapi.consts.PVT_VM)
+
+        # remove unneded devices
+        n = sdk_ve.get_devs_count_by_type(prlconsts.PDE_HARD_DISK)
+        for i in xrange(n):
+            dev = sdk_ve.get_dev_by_type(prlconsts.PDE_HARD_DISK, i)
+            dev.remove()
+
+        n = sdk_ve.get_devs_count_by_type(
+                    prlconsts.PDE_GENERIC_NETWORK_ADAPTER)
+        for i in xrange(n):
+            dev = sdk_ve.get_dev_by_type(
+                        prlconsts.PDE_GENERIC_NETWORK_ADAPTER, i)
+            dev.remove()
+
+        sdk_ve.reg('', True).wait()
+
+        # copy hard disk to VM directory
+        ve_path = os.path.dirname(sdk_ve.get_home_path())
+        disk_path = os.path.join(ve_path, "harddisk.hdd")
+        utils.execute('mkdir', disk_path, run_as_root = True)
+        LOG.info("Copying image disk ... %s to %s" % \
+                            (self.tmpl_path, disk_path))
+        utils.execute('rm', '-rf', disk_path, run_as_root = True)
+        utils.execute('cp', '-rf', self.tmpl_path, disk_path,
+                                        run_as_root = True)
+
+        # add hard disk to VM config and set is as boot device
+        sdk_ve.begin_edit().wait()
+
+        hdd = sdk_ve.add_default_device_ex(srv_cfg, prlconsts.PDE_HARD_DISK)
+        hdd.set_image_path(disk_path)
+
+        b = sdk_ve.create_boot_dev()
+        b.set_type(prlconsts.PDE_HARD_DISK)
+        b.set_index(hdd.get_index())
+        b.set_sequence_index(0)
+        b.set_in_use(1)
+
+        sdk_ve.commit().wait()
+
+        return sdk_ve
 
     def create_instance(self, psrv, instance):
-        tmpl_ve = self.driver._get_ve_by_name("tmpl-%s" % self.image_id)
-        sdk_ve = tmpl_ve.clone_ex(instance['name'], '', 0).wait().get_param()
-        return sdk_ve
+        if self.image_info['disk_format'] == 'ploop-container':
+            return self._create_ct(psrv, instance)
+        else:
+            return self._create_vm(psrv, instance)
