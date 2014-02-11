@@ -669,7 +669,7 @@ class PloopTemplate(PCSTemplate):
 
         return tmpl_path
 
-    def create_instance(self, psrv, instance):
+    def _create_ct(self, psrv, instance):
         sdk_ve = psrv.get_default_vm_config(
                         prlsdkapi.consts.PVT_CT, 'vswap.1024MB', 0, 0).wait()[0]
         sdk_ve.set_uuid(instance['uuid'])
@@ -688,3 +688,12 @@ class PloopTemplate(PCSTemplate):
                                         run_as_root = True)
         LOG.info("Done")
         return sdk_ve
+
+    def _create_vm(self, psrv, instance):
+        raise NotImplementedError()
+
+    def create_instance(self, psrv, instance):
+        if self.image_info['disk_format'] == 'ploop-container':
+            return self._create_ct(psrv, instance)
+        else:
+            return self._create_vm(psrv, instance)
