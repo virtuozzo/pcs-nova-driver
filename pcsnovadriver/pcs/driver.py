@@ -647,40 +647,44 @@ class GoldenImageTemplate(PCSTemplate):
 
         (image_service, image_id) = \
             glance.get_remote_image_service(context, image_ref)
-        image_info = image_service.show(context, image_ref)
+        self.image_info = image_service.show(context, image_ref)
         self.image_id = image_id
 
-        if driver.instance_exists("tmpl-%s" % image_id):
-            LOG.info("Using image from cache.")
-        else:
-            LOG.info("Downloading image...")
-            tmpl_path = self._get_image(context, image_id, image_service)
-            self._register_template(tmpl_path)
+        self.tmpl_path = self._get_image(context, image_id, image_service)
 
     def _get_image(self, context, image_id, image_service):
         tmpl_path = os.path.join(CONF.pcs_template_dir, image_id)
         if os.path.exists(tmpl_path):
-            shutil.rmtree(tmpl_path)
+            LOG.info("Using image from cache.")
+            return tmpl_path
+
+        LOG.info("Downloading image...")
         os.mkdir(tmpl_path)
 
-        args = ['tar', 'x', '-C', tmpl_path]
-        LOG.info("Running tar: %r" % args)
-        p = subprocess.Popen(args, stdin = subprocess.PIPE)
+        image_name = self.image_info['properties']['pcs_image_name']
+        with open(os.path.join(tmpl_path, image_name), 'w') as f:
+            image_service.download(context, image_id, f)
+        with open(os.path.join(tmpl_path, 'DiskDescriptor.xml'), 'w') as f:
+            f.write(self.image_info['properties']['pcs_disk_descriptor'])
 
-        image_service.download(context, image_id, data=p.stdin)
-        p.stdin.close()
-
-        ret = p.wait()
-        if ret:
-            raise Exception("tar returned %d" % ret)
-
-        LOG.info(_("Golden image download complete"))
         return tmpl_path
 
-    def _register_template(self, tmpl_path):
-        self.driver.psrv.register_vm(tmpl_path, True).wait()
-
     def create_instance(self, psrv, instance):
-        tmpl_ve = self.driver._get_ve_by_name("tmpl-%s" % self.image_id)
-        sdk_ve = tmpl_ve.clone_ex(instance['name'], '', 0).wait().get_param()
+        sdk_ve = psrv.get_default_vm_config(
+                        prlsdkapi.consts.PVT_CT, 'vswap.1024MB', 0, 0).wait()[0]
+        sdk_ve.set_uuid(instance['uuid'])
+        sdk_ve.set_name(instance['name'])
+        sdk_ve.set_vm_type(prlsdkapi.consts.PVT_CT)
+        sdk_ve.set_os_template(self.image_info['properties']['pcs_ostemplate'])
+        LOG.info("Creating container from eztemplate ...")
+        sdk_ve.reg('', True).wait()
+
+        disk_path = sdk_ve.get_home_path()
+        disk_path = os.path.join(disk_path, 'root.hdd')
+        LOG.info("Removing original disk ...")
+        utils.execute('rm', '-rf', disk_path, run_as_root = True)
+        LOG.info("Copying image disk ...")
+        utils.execute('cp', '-rf', self.tmpl_path, disk_path,
+                                        run_as_root = True)
+        LOG.info("Done")
         return sdk_ve

@@ -55,17 +55,6 @@ class PCSImagesShell(OpenStackImagesShell):
             srv.login(login, passwd)
         return srv
 
-    def _reset_network(self, ve):
-        ndevs = ve.get_devs_count_by_type(
-                prlconsts.PDE_GENERIC_NETWORK_ADAPTER)
-        ve.begin_edit().wait()
-        for i in xrange(ndevs):
-            dev = ve.get_dev_by_type(
-                    prlconsts.PDE_GENERIC_NETWORK_ADAPTER, i)
-            if dev.get_emulated_type() != prlconsts.PNA_ROUTED:
-                dev.remove()
-        ve.commit().wait()
-
     @utils.arg('ve_name', metavar='<VE_NAME>',
                help='Name or UUID of VM.')
     @utils.arg('--name', metavar='<NAME>',
@@ -119,21 +108,29 @@ class PCSImagesShell(OpenStackImagesShell):
             job = ve.clone_ex("tmpl-" + image.id, '',
                               prlconsts.PCVF_CLONE_TO_TEMPLATE)
             image_ve = job.wait().get_param()
-            self._reset_network(image_ve)
 
-            ve_dir = image_ve.get_home_path()
-            if not os.path.isdir(ve_dir):
-                # for containers get_home_path returns path
-                # to private area, but for VMs - path to VM
-                # config file.
-                ve_dir = os.path.dirname(ve_dir)
-            cmd = ['tar', 'cO', '-C', ve_dir, '.']
-            p = subprocess.Popen(cmd, stdout = subprocess.PIPE)
-            gc.images.upload(image.id, p.stdout)
+            # get first hdd
+            hdd_count = image_ve.get_devs_count_by_type(prlconsts.PDE_HARD_DISK)
+            if hdd_count < 1:
+                raise Exception("There are no hard disks in VE.")
+            hdd = image_ve.get_dev_by_type(prlconsts.PDE_HARD_DISK, 0)
+            hdd_path = hdd.get_image_path()
+            xml_path = os.path.join(hdd_path, "DiskDescriptor.xml")
+            cmd = "ploop snapshot-list -H -o fname %s" % xml_path
+            out = commands.getoutput(cmd)
+            image_path = out.strip()
 
-            ret = p.wait()
-            if ret:
-                raise Exception('tar returned %d' % ret)
+            with open(image_path) as f:
+                gc.images.upload(image.id, f)
+
+            with open(xml_path) as f:
+                desc = f.read()
+
+            gc.images.update(image.id,
+                # Glance API v1 doesn't support line breaks
+                pcs_disk_descriptor = desc.replace('\n', ''),
+                pcs_ostemplate = image_ve.get_os_template(),
+                pcs_image_name = os.path.basename(image_path))
 
             # print new image info
             image = gc.images.get(image.id)
