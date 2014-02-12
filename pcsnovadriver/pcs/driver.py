@@ -269,7 +269,7 @@ class PCSDriver(driver.ComputeDriver):
 
         # TODO: handle all possible states
         if state == prlconsts.VMS_RUNNING:
-            sdk_ve.stop_ex(prlconsts.PSM_ACPI, prlconsts.PSF_FORCE).wait()
+            sdk_ve.stop_ex(prlconsts.PSM_KILL, prlconsts.PSF_FORCE).wait()
         sdk_ve.delete().wait()
 
         self.firewall_driver.unfilter_instance(instance,
@@ -304,7 +304,7 @@ class PCSDriver(driver.ComputeDriver):
         if reboot_type == 'SOFT':
             sdk_ve.restart().wait()
         else:
-            sdk_ve.stop_ex(prlconsts.PSM_ACPI, prlconsts.PSF_FORCE).wait()
+            sdk_ve.stop_ex(prlconsts.PSM_KILL, 0).wait()
             sdk_ve.start().wait()
         self._plug_vifs(instance, sdk_ve, network_info)
 
