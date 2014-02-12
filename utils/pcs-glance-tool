@@ -24,6 +24,7 @@ import commands
 import subprocess
 import argparse
 import re
+import tempfile
 
 from keystoneclient.v2_0 import client as ksclient
 import glanceclient
@@ -35,6 +36,50 @@ from glanceclient.shell import OpenStackImagesShell
 import prlsdkapi
 
 prlconsts = prlsdkapi.consts
+
+DISK_FORMATS = ('Acceptable formats: ploop, vhd, vmdk, '
+                'raw, qcow2, vdi, and iso.')
+QEMU_IMG_FORMAT = ['vhd', 'vmdk', 'raw', 'qcow2', 'vdi', 'iso']
+
+def getstatusoutput(cmd):
+    """
+    getstatusoutput from commands module supports only string
+    commands, which isn't convenient.
+    """
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    out = p.stdout.read()
+    ret = p.wait()
+    return ret, out
+
+def system_exc(cmd):
+    """
+    Run command and raise exception in case of non-zero
+    exit code.
+    """
+    p = subprocess.call(cmd)
+    if p:
+        raise Exception("'%r' returned %d" % (cmd, ret))
+
+def convert_image(src, dst, disk_format):
+    """
+    Convert image from ploop format to any, that qemu-img supports.
+    src: path to directory with ploop
+    dst: path to output file name
+    disk_format: disk format string
+    """
+    dd_path = os.path.join(src, 'DiskDescriptor.xml')
+    cmd = ['ploop', 'mount', dd_path]
+    ret, out = getstatusoutput(cmd)
+    try:
+        ro = re.search('dev=(\S+)', out)
+        if not ro:
+            raise Exception('Invalid output from %r: %s' % (cmd, out))
+        ploop_dev = ro.group(1)
+
+        system_exc(['qemu-img', 'convert', '-f', 'raw',
+                    '-O', disk_format, ploop_dev, dst])
+    finally:
+        system_exc(['ploop', 'umount', dd_path])
 
 class PCSImagesShell(OpenStackImagesShell):
 
@@ -101,9 +146,16 @@ class PCSImagesShell(OpenStackImagesShell):
                help='Prevent image from being deleted.')
     @utils.arg('--prl-login', metavar='<LOGIN>', help='')
     @utils.arg('--prl-passwd', metavar='<PASSWORD>', help='')
+    @utils.arg('--disk-format', metavar='<DISK_FORMAT>',
+               help='Filter images to those that have this disk format. '
+                    + DISK_FORMATS)
     def do_image_create(self, gc, args):
         if args.os_image_api_version != '2':
             raise Exception('Only image API version 2 is supported.')
+
+        if args.disk_format not in ['ploop'] + QEMU_IMG_FORMAT:
+            raise Exception("Disk format '%s' is not supported." % \
+                                                    args.disk_format)
 
         srv = self._init_sdk(args.prl_login, args.prl_passwd)
         ve = srv.get_vm_config(args.ve_name,
@@ -118,11 +170,13 @@ class PCSImagesShell(OpenStackImagesShell):
                               schema.is_core_property(x[0])),
                              _args))
 
-        if ve.get_vm_type() == prlconsts.PVT_VM:
-            fields['disk_format'] = 'ploop-vm'
-        else:
-            fields['disk_format'] = 'ploop-container'
         fields['container_format'] = 'bare'
+
+        if args.disk_format == 'ploop':
+            if ve.get_vm_type() == prlconsts.PVT_VM:
+                fields['disk_format'] = 'ploop-vm'
+            else:
+                fields['disk_format'] = 'ploop-container'
 
         image = gc.images.create(**fields)
 
@@ -143,17 +197,28 @@ class PCSImagesShell(OpenStackImagesShell):
             out = commands.getoutput(cmd)
             image_path = out.strip()
 
-            with open(image_path) as f:
-                gc.images.upload(image.id, f)
+            extra_fields = {}
 
-            with open(xml_path) as f:
-                desc = f.read()
+            if args.disk_format == 'ploop':
+                with open(image_path) as f:
+                    gc.images.upload(image.id, f)
 
-            gc.images.update(image.id,
+                with open(xml_path) as f:
+                    desc = f.read()
+
                 # Glance API v1 doesn't support line breaks
-                pcs_disk_descriptor = desc.replace('\n', ''),
-                pcs_ostemplate = image_ve.get_os_template(),
-                pcs_image_name = os.path.basename(image_path))
+                extra_fields['pcs_disk_descriptor'] = desc.replace('\n', '')
+            else:
+                dst = tempfile.mktemp(dir=os.path.dirname(hdd_path))
+                convert_image(hdd_path, dst, args.disk_format)
+                with open(dst) as f:
+                    gc.images.upload(image.id, f)
+                os.unlink(dst)
+
+            extra_fields['pcs_ostemplate'] = image_ve.get_os_template()
+            extra_fields['pcs_image_name'] = os.path.basename(image_path)
+
+            gc.images.update(image.id, **extra_fields)
 
             # print new image info
             image = gc.images.get(image.id)
