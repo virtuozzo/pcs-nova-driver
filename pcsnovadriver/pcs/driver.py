@@ -683,6 +683,14 @@ class PloopTemplate(PCSTemplate):
         if msg:
             raise Exception(msg)
 
+    def _download_ploop(self, context, image_id, image_service, dst):
+        LOG.info("Downloading image to %s ..." % dst)
+        image_name = self.image_info['properties']['pcs_image_name']
+        with open(os.path.join(dst, image_name), 'w') as f:
+            image_service.download(context, image_id, f)
+        with open(os.path.join(dst, 'DiskDescriptor.xml'), 'w') as f:
+            f.write(self.image_info['properties']['pcs_disk_descriptor'])
+
     def _get_image(self, context, image_id, image_service):
         tmpl_dir = os.path.join(CONF.pcs_template_dir, image_id)
         tmpl_file = tmpl_dir + '.tar.lzrw'
@@ -690,17 +698,11 @@ class PloopTemplate(PCSTemplate):
             LOG.info("Using image from cache.")
             return tmpl_file
 
-        LOG.info("Downloading image...")
         if os.path.exists(tmpl_dir):
             shutil.rmtree(tmpl_dir)
         os.mkdir(tmpl_dir)
 
-        image_name = self.image_info['properties']['pcs_image_name']
-        with open(os.path.join(tmpl_dir, image_name), 'w') as f:
-            image_service.download(context, image_id, f)
-        with open(os.path.join(tmpl_dir, 'DiskDescriptor.xml'), 'w') as f:
-            f.write(self.image_info['properties']['pcs_disk_descriptor'])
-
+        self._download_ploop(context, image_id, image_service, tmpl_dir)
         self._compress_ploop(tmpl_dir, tmpl_file)
         shutil.rmtree(tmpl_dir)
 
