@@ -22,6 +22,7 @@ import subprocess
 import shlex
 import shutil
 import time
+import re
 from xml.dom import minidom
 
 from oslo.config import cfg
@@ -514,8 +515,7 @@ def get_template(driver, context, image_ref, user_id, project_id):
         elif image_info['disk_format'] == 'ploop':
             return PloopTemplate(driver, context, image_ref, user_id, project_id)
         else:
-            raise Exception("Unsupported disk format: %s" % \
-                                    image_info['disk_format'])
+            return QemuTemplate(driver, context, image_ref, user_id, project_id)
 
 class PCSTemplate(object):
     def __init__(self, context, image_ref, user_id, project_id):
@@ -640,7 +640,7 @@ class EzTemplate:
 class PloopTemplate(PCSTemplate):
 
     def __init__(self, driver, context, image_ref, user_id, project_id):
-        LOG.info("PloopImageTemplate.__init__")
+        LOG.info("%s.__init__" % self.__class__.__name__)
         self.user_id = user_id
         self.project_id = project_id
         self.driver = driver
@@ -846,3 +846,40 @@ class PloopTemplate(PCSTemplate):
             return self._create_ct(psrv, instance)
         else:
             raise Exception("Unsupported VM mode '%s'" % props['vm_mode'])
+
+class QemuTemplate(PloopTemplate):
+    """
+    This class creates instances from images in formats, which
+    qemu-img supports.
+    """
+    def _download_ploop(self, context, image_id, image_service, dst):
+        glance_img = 'glance.img'
+        glance_path = os.path.join(dst, glance_img)
+        LOG.info("Download image from glance ...")
+        with open(glance_path, 'w') as f:
+            image_service.download(context, image_id, f)
+
+        out, err = utils.execute('qemu-img', 'info',
+                                 '--output=json', glance_path)
+        img_info = jsonutils.loads(out)
+        size = int(img_info['virtual-size'])
+
+        utils.execute('ploop', 'init', '-s',
+                      '%dK' % (size >> 10), os.path.join(dst, 'root.hds'))
+
+        dd_path = os.path.join(dst, 'DiskDescriptor.xml')
+        out, err = utils.execute('ploop', 'mount', dd_path, run_as_root=True)
+
+        ro = re.search('dev=(\S+)', out)
+        if not ro:
+            utils.execute('ploop', 'umount', dd_path, run_as_root=True)
+        ploop_dev = ro.group(1)
+
+        try:
+            LOG.info("Convert to ploop format ...")
+            utils.execute('qemu-img', 'convert', '-O', 'raw',
+                          glance_path, ploop_dev, run_as_root=True)
+        finally:
+            utils.execute('ploop', 'umount', dd_path, run_as_root=True)
+            utils.execute('rm', '-f', dd_path + '.lck')
+            os.unlink(glance_path)
