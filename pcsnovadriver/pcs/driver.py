@@ -648,10 +648,6 @@ class PloopTemplate(PCSTemplate):
         self.tmpl_file = self._get_image(context, image_id, image_service)
 
     def _compress_ploop(self, src, dst):
-        p1 = None
-        p2 = None
-        ret1 = None
-        ret2 = None
         cmd1 = ['tar', 'cO', '-C', src, '.']
         cmd2 = ['prlcompress', '-p']
 
@@ -659,16 +655,22 @@ class PloopTemplate(PCSTemplate):
         dst_file = open(dst, 'w')
         try:
             p1 = subprocess.Popen(cmd1, stdout=subprocess.PIPE)
-            p2 = subprocess.Popen(cmd2, stdin=p1.stdout, stdout=dst_file)
-            p1.stdout.close()
-            ret1 = p1.wait()
-            ret2 = p2.wait()
-        finally:
-            if ret1 is None and p1:
-                ret1 = p1.wait()
-            if ret2 is None and p2:
-                ret2 = p2.wait()
+        except:
             dst_file.close()
+
+        try:
+            p2 = subprocess.Popen(cmd2, stdin=p1.stdout, stdout=dst_file)
+        except:
+            p1.kill()
+            p1.wait()
+            raise
+        finally:
+            dst_file.close()
+
+        p1.stdout.close()
+
+        ret1 = p1.wait()
+        ret2 = p2.wait()
 
         msg = ""
         if ret1:
@@ -735,28 +737,29 @@ class PloopTemplate(PCSTemplate):
         return tmpl_file
 
     def _uncompress_ploop(self, dst):
-        p1 = None
-        p2 = None
-        ret1 = None
-        ret2 = None
         cmd1 = ['prlcompress', '-u']
         cmd2 = shlex.split(utils.get_root_helper()) + ['tar', 'x', '-C', dst]
+
+        utils.execute('mkdir', dst, run_as_root = True)
 
         LOG.info("Unpacking image %s to %s" % (self.tmpl_file, dst))
         src_file = open(self.tmpl_file)
         try:
             p1 = subprocess.Popen(cmd1, stdin=src_file, stdout=subprocess.PIPE)
-            utils.execute('mkdir', dst, run_as_root = True)
-            p2 = subprocess.Popen(cmd2, stdin=p1.stdout)
-            p1.stdout.close()
-            ret1 = p1.wait()
-            ret2 = p2.wait()
         finally:
-            if ret1 is None and p1:
-                ret1 = p1.wait()
-            if ret2 is None and p2:
-                ret2 = p2.wait()
             src_file.close()
+
+        try:
+            p2 = subprocess.Popen(cmd2, stdin=p1.stdout)
+        except:
+            p1.kill()
+            p1.wait()
+            raise
+
+        p1.stdout.close()
+
+        ret1 = p1.wait()
+        ret2 = p2.wait()
 
         msg = ""
         if ret1:
