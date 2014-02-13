@@ -254,6 +254,9 @@ class VifOvsHybrid(BaseVif):
         v1_name, v2_name = self.get_veth_pair_names(vif['id'])
 
         netdev = self.get_prl_dev(driver, sdk_ve, vif['address'])
+        if not netdev:
+            return
+
         prl_name = self.get_prl_name(sdk_ve, netdev)
 
         linux_net.delete_ovs_vif_port(self.get_bridge_name(vif), v2_name)
@@ -279,5 +282,8 @@ class VifOvsEthernet(BaseVif):
 
     def unplug(self, driver, instance, sdk_ve, vif):
         netdev = self.get_prl_dev(driver, sdk_ve, vif['address'])
+        if not netdev:
+            return
+
         prl_name = self.get_prl_name(sdk_ve, netdev)
         linux_net.delete_ovs_vif_port(self.get_bridge_name(vif), prl_name)
