@@ -216,7 +216,6 @@ class PCSImagesShell(OpenStackImagesShell):
                 os.unlink(dst)
 
             extra_fields['pcs_ostemplate'] = image_ve.get_os_template()
-            extra_fields['pcs_image_name'] = os.path.basename(image_path)
 
             gc.images.update(image.id, **extra_fields)
 
