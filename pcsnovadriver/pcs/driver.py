@@ -229,12 +229,6 @@ class PCSDriver(driver.ComputeDriver):
     def spawn(self, context, instance, image_meta, injected_files,
             admin_password, network_info=None, block_device_info=None):
         LOG.info("spawn: %s" % instance['name'])
-        LOG.info("context=%r" % context)
-        LOG.info("instance=%r" % instance)
-        LOG.info("image_meta=%r" % image_meta)
-        LOG.info("admin_password=%r" % admin_password)
-        LOG.info("network_info=%r" % network_info)
-        LOG.info("block_device_info=%r" % block_device_info)
 
         tmpl = get_template(self, context, instance['image_ref'],
                         instance['user_id'], instance['project_id'])
