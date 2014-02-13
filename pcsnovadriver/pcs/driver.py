@@ -33,6 +33,7 @@ from nova.compute import utils as compute_utils
 from nova.compute import power_state
 from nova.compute import task_states
 from nova.openstack.common.gettextutils import _
+from nova.openstack.common import jsonutils
 from nova.openstack.common.processutils import ProcessExecutionError
 from nova.openstack.common import log as logging
 from nova.virt import driver
@@ -494,6 +495,10 @@ class HostState(object):
         data['hypervisor_type'] = 'PCS'
         data['hypervisor_version'] = self._format_ver(info.get_product_version())
         data['hypervisor_hostname'] = self.driver.host
+        data["supported_instances"] = jsonutils.dumps([('i686', 'pcs', 'hvm'),
+                                       ('x86_64', 'pcs', 'hvm'),
+                                       ('i686', 'pcs', 'exe'),
+                                       ('x86_64', 'pcs', 'exe')])
 
         self._stats = data
 
