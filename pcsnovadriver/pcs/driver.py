@@ -650,24 +650,93 @@ class PloopTemplate(PCSTemplate):
         self.image_info = image_service.show(context, image_ref)
         self.image_id = image_id
 
-        self.tmpl_path = self._get_image(context, image_id, image_service)
+        self.tmpl_file = self._get_image(context, image_id, image_service)
+
+    def _compress_ploop(self, src, dst):
+        p1 = None
+        p2 = None
+        ret1 = None
+        ret2 = None
+        cmd1 = ['tar', 'cO', '-C', src, '.']
+        cmd2 = ['prlcompress', '-p']
+
+        LOG.info("Packing image to %s" % dst)
+        dst_file = open(dst, 'w')
+        try:
+            p1 = subprocess.Popen(cmd1, stdout=subprocess.PIPE)
+            p2 = subprocess.Popen(cmd2, stdin=p1.stdout, stdout=dst_file)
+            p1.stdout.close()
+            ret1 = p1.wait()
+            ret2 = p2.wait()
+        finally:
+            if ret1 is None and p1:
+                ret1 = p1.wait()
+            if ret2 is None and p2:
+                ret2 = p2.wait()
+            dst_file.close()
+
+        msg = ""
+        if ret1:
+            msg = '%r returned %d' % (cmd1, ret1)
+        if ret2:
+            msg += ', %r returned %d' % (cmd2, ret2)
+        if msg:
+            raise Exception(msg)
 
     def _get_image(self, context, image_id, image_service):
-        tmpl_path = os.path.join(CONF.pcs_template_dir, image_id)
-        if os.path.exists(tmpl_path):
+        tmpl_dir = os.path.join(CONF.pcs_template_dir, image_id)
+        tmpl_file = tmpl_dir + '.tar.lzrw'
+        if os.path.exists(tmpl_file):
             LOG.info("Using image from cache.")
-            return tmpl_path
+            return tmpl_file
 
         LOG.info("Downloading image...")
-        os.mkdir(tmpl_path)
+        if os.path.exists(tmpl_dir):
+            shutil.rmtree(tmpl_dir)
+        os.mkdir(tmpl_dir)
 
         image_name = self.image_info['properties']['pcs_image_name']
-        with open(os.path.join(tmpl_path, image_name), 'w') as f:
+        with open(os.path.join(tmpl_dir, image_name), 'w') as f:
             image_service.download(context, image_id, f)
-        with open(os.path.join(tmpl_path, 'DiskDescriptor.xml'), 'w') as f:
+        with open(os.path.join(tmpl_dir, 'DiskDescriptor.xml'), 'w') as f:
             f.write(self.image_info['properties']['pcs_disk_descriptor'])
 
-        return tmpl_path
+        self._compress_ploop(tmpl_dir, tmpl_file)
+        shutil.rmtree(tmpl_dir)
+
+        return tmpl_file
+
+    def _uncompress_ploop(self, dst):
+        p1 = None
+        p2 = None
+        ret1 = None
+        ret2 = None
+        cmd1 = ['prlcompress', '-u']
+        cmd2 = shlex.split(utils.get_root_helper()) + ['tar', 'x', '-C', dst]
+
+        LOG.info("Unpacking image %s to %s" % (self.tmpl_file, dst))
+        src_file = open(self.tmpl_file)
+        try:
+            p1 = subprocess.Popen(cmd1, stdin=src_file, stdout=subprocess.PIPE)
+            utils.execute('mkdir', dst, run_as_root = True)
+            p2 = subprocess.Popen(cmd2, stdin=p1.stdout)
+            p1.stdout.close()
+            ret1 = p1.wait()
+            ret2 = p2.wait()
+        finally:
+            if ret1 is None and p1:
+                ret1 = p1.wait()
+            if ret2 is None and p2:
+                ret2 = p2.wait()
+            src_file.close()
+
+        msg = ""
+        if ret1:
+            msg = '%r returned %d' % (cmd1, ret1)
+        if ret2:
+            msg += ', %r returned %d' % (cmd2, ret2)
+        if msg:
+            raise Exception(msg)
 
     def _create_ct(self, psrv, instance):
         sdk_ve = psrv.get_default_vm_config(
@@ -683,9 +752,7 @@ class PloopTemplate(PCSTemplate):
         disk_path = os.path.join(disk_path, 'root.hdd')
         LOG.info("Removing original disk ...")
         utils.execute('rm', '-rf', disk_path, run_as_root = True)
-        LOG.info("Copying image disk ...")
-        utils.execute('cp', '-rf', self.tmpl_path, disk_path,
-                                        run_as_root = True)
+        self._uncompress_ploop(disk_path)
         LOG.info("Done")
         return sdk_ve
 
@@ -717,12 +784,7 @@ class PloopTemplate(PCSTemplate):
         # copy hard disk to VM directory
         ve_path = os.path.dirname(sdk_ve.get_home_path())
         disk_path = os.path.join(ve_path, "harddisk.hdd")
-        utils.execute('mkdir', disk_path, run_as_root = True)
-        LOG.info("Copying image disk ... %s to %s" % \
-                            (self.tmpl_path, disk_path))
-        utils.execute('rm', '-rf', disk_path, run_as_root = True)
-        utils.execute('cp', '-rf', self.tmpl_path, disk_path,
-                                        run_as_root = True)
+        self._uncompress_ploop(disk_path)
 
         # add hard disk to VM config and set is as boot device
         sdk_ve.begin_edit().wait()
