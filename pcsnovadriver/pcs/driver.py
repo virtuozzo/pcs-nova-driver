@@ -511,7 +511,7 @@ def get_template(driver, context, image_ref, user_id, project_id):
 
         if image_info['disk_format'] == 'ez-template':
             return EzTemplate(driver, context, image_ref, user_id, project_id)
-        elif image_info['disk_format'] in ['ploop-container', 'ploop-vm']:
+        elif image_info['disk_format'] == 'ploop':
             return PloopTemplate(driver, context, image_ref, user_id, project_id)
         else:
             raise Exception("Unsupported disk format: %s" % \
@@ -839,7 +839,10 @@ class PloopTemplate(PCSTemplate):
         return sdk_ve
 
     def create_instance(self, psrv, instance):
-        if self.image_info['disk_format'] == 'ploop-container':
+        props = self.image_info['properties']
+        if not 'vm_mode' in props or props['vm_mode'] == 'hvm':
+            return self._create_vm(psrv, instance)
+        elif props['vm_mode'] == 'exe':
             return self._create_ct(psrv, instance)
         else:
-            return self._create_vm(psrv, instance)
+            raise Exception("Unsupported VM mode '%s'" % props['vm_mode'])
