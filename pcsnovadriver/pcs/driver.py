@@ -22,6 +22,7 @@ import subprocess
 import shlex
 import shutil
 import time
+from xml.dom import minidom
 
 from oslo.config import cfg
 
@@ -683,9 +684,40 @@ class PloopTemplate(PCSTemplate):
         if msg:
             raise Exception(msg)
 
+    def _get_image_name(self, disk_descriptor):
+        doc = minidom.parseString(disk_descriptor)
+        disk_image = doc.firstChild
+
+        items = disk_image.getElementsByTagName('StorageData')
+        if len(items) != 1:
+            raise Exception('Invalid DiskDescriptor.xml')
+        storage_data = items[0]
+
+        items = storage_data.getElementsByTagName('Storage')
+        if len(items) != 1:
+            raise Exception('Invalid DiskDescriptor.xml')
+        storage = items[0]
+
+        images = storage.getElementsByTagName('Image')
+        if len(images) != 1:
+            raise Exception('Ploop contains spapshots')
+        image = images[0]
+
+        files = image.getElementsByTagName('File')
+        if len(files) != 1:
+            raise Exception('Invalid DiskDescriptor.xml')
+        file = files[0]
+
+        text = file.firstChild
+        if text.nodeType != text.TEXT_NODE:
+            raise Exception('Invalid DiskDescriptor.xml')
+
+        return text.nodeValue
+
     def _download_ploop(self, context, image_id, image_service, dst):
         LOG.info("Downloading image to %s ..." % dst)
-        image_name = self.image_info['properties']['pcs_image_name']
+        dd = self.image_info['properties']['pcs_disk_descriptor']
+        image_name = self._get_image_name(dd)
         with open(os.path.join(dst, image_name), 'w') as f:
             image_service.download(context, image_id, f)
         with open(os.path.join(dst, 'DiskDescriptor.xml'), 'w') as f:
