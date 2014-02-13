@@ -637,8 +637,11 @@ class EzTemplate:
         sdk_ve.reg('', True).wait()
         return sdk_ve
 
-class PloopTemplate(PCSTemplate):
-
+class DiskCacheTemplate(PCSTemplate):
+    """
+    This class is for templates, based on disk images, stored
+    in glance.
+    """
     def __init__(self, driver, context, image_ref, user_id, project_id):
         LOG.info("%s.__init__" % self.__class__.__name__)
         self.user_id = user_id
@@ -650,7 +653,146 @@ class PloopTemplate(PCSTemplate):
         self.image_info = image_service.show(context, image_ref)
         self.image_id = image_id
 
-        self.tmpl_file = self._get_image(context, image_id, image_service)
+        if not self._is_image_cached():
+            self._cache_image(context, image_service)
+
+    def _is_image_cached(self):
+        """
+        Returns True, if image with given id cached.
+        """
+        raise NotImplementedError()
+
+    def _cache_image(self, context, image_service):
+        """
+        Cache image from glance to local FS.
+        """
+        raise NotImplementedError()
+
+    def _put_image(self, dst):
+        """
+        Copy ploop image to the specified destination.
+        """
+        raise NotImplementedError()
+
+    def _create_ct(self, psrv, instance):
+        sdk_ve = psrv.get_default_vm_config(
+                        prlsdkapi.consts.PVT_CT, 'vswap.1024MB', 0, 0).wait()[0]
+        sdk_ve.set_uuid(instance['uuid'])
+        sdk_ve.set_name(instance['name'])
+        sdk_ve.set_vm_type(prlsdkapi.consts.PVT_CT)
+        sdk_ve.set_os_template(self.image_info['properties']['pcs_ostemplate'])
+        LOG.info("Creating container from eztemplate ...")
+        sdk_ve.reg('', True).wait()
+
+        disk_path = sdk_ve.get_home_path()
+        disk_path = os.path.join(disk_path, 'root.hdd')
+        LOG.info("Removing original disk ...")
+        utils.execute('rm', '-rf', disk_path, run_as_root = True)
+        self._put_image(disk_path)
+        LOG.info("Done")
+        return sdk_ve
+
+    def _create_vm(self, psrv, instance):
+        # create an empty VM
+        sdk_ve = psrv.create_vm()
+        srv_cfg = psrv.get_srv_config().wait().get_param()
+        os_ver = getattr(prlconsts, "PVS_GUEST_VER_LIN_REDHAT")
+        sdk_ve.set_default_config(srv_cfg, os_ver, True)
+        sdk_ve.set_uuid('{%s}' % instance['uuid'])
+        sdk_ve.set_name(instance['name'])
+        sdk_ve.set_vm_type(prlsdkapi.consts.PVT_VM)
+
+        # remove unneded devices
+        n = sdk_ve.get_devs_count_by_type(prlconsts.PDE_HARD_DISK)
+        for i in xrange(n):
+            dev = sdk_ve.get_dev_by_type(prlconsts.PDE_HARD_DISK, i)
+            dev.remove()
+
+        n = sdk_ve.get_devs_count_by_type(
+                    prlconsts.PDE_GENERIC_NETWORK_ADAPTER)
+        for i in xrange(n):
+            dev = sdk_ve.get_dev_by_type(
+                        prlconsts.PDE_GENERIC_NETWORK_ADAPTER, i)
+            dev.remove()
+
+        sdk_ve.reg('', True).wait()
+
+        # copy hard disk to VM directory
+        ve_path = os.path.dirname(sdk_ve.get_home_path())
+        disk_path = os.path.join(ve_path, "harddisk.hdd")
+        self._put_image(disk_path)
+
+        # add hard disk to VM config and set is as boot device
+        sdk_ve.begin_edit().wait()
+
+        hdd = sdk_ve.add_default_device_ex(srv_cfg, prlconsts.PDE_HARD_DISK)
+        hdd.set_image_path(disk_path)
+
+        b = sdk_ve.create_boot_dev()
+        b.set_type(prlconsts.PDE_HARD_DISK)
+        b.set_index(hdd.get_index())
+        b.set_sequence_index(0)
+        b.set_in_use(1)
+
+        sdk_ve.commit().wait()
+
+        return sdk_ve
+
+    def create_instance(self, psrv, instance):
+        props = self.image_info['properties']
+        if not 'vm_mode' in props or props['vm_mode'] == 'hvm':
+            return self._create_vm(psrv, instance)
+        elif props['vm_mode'] == 'exe':
+            return self._create_ct(psrv, instance)
+        else:
+            raise Exception("Unsupported VM mode '%s'" % props['vm_mode'])
+
+class LZRWCacheTemplate(DiskCacheTemplate):
+    """
+    Class for templates, cached in form of ploop images,
+    compressed with LZRW.
+    """
+    def _get_cached_file(self):
+        return os.path.join(CONF.pcs_template_dir,
+                            self.image_id + '.tar.lzrw')
+
+    def _is_image_cached(self):
+        return os.path.exists(self._get_cached_file())
+
+    def _put_image(self, dst):
+        cmd1 = ['prlcompress', '-u']
+        cmd2 = shlex.split(utils.get_root_helper()) + ['tar', 'x', '-C', dst]
+
+        utils.execute('mkdir', dst, run_as_root = True)
+
+        LOG.info("Unpacking image %s to %s" % (self._get_cached_file(), dst))
+        src_file = open(self._get_cached_file())
+        try:
+            p1 = subprocess.Popen(cmd1, stdin=src_file, stdout=subprocess.PIPE)
+        finally:
+            src_file.close()
+
+        try:
+            p2 = subprocess.Popen(cmd2, stdin=p1.stdout)
+        except:
+            p1.kill()
+            p1.wait()
+            raise
+
+        p1.stdout.close()
+
+        ret1 = p1.wait()
+        ret2 = p2.wait()
+
+        msg = ""
+        if ret1:
+            msg = '%r returned %d' % (cmd1, ret1)
+        if ret2:
+            msg += ', %r returned %d' % (cmd2, ret2)
+        if msg:
+            raise Exception(msg)
+
+class PloopTemplate(LZRWCacheTemplate):
 
     def _compress_ploop(self, src, dst):
         cmd1 = ['tar', 'cO', '-C', src, '.']
@@ -715,149 +857,38 @@ class PloopTemplate(PCSTemplate):
 
         return text.nodeValue
 
-    def _download_ploop(self, context, image_id, image_service, dst):
+    def _download_ploop(self, context, image_service, dst):
         LOG.info("Downloading image to %s ..." % dst)
         dd = self.image_info['properties']['pcs_disk_descriptor']
         image_name = self._get_image_name(dd)
         with open(os.path.join(dst, image_name), 'w') as f:
-            image_service.download(context, image_id, f)
+            image_service.download(context, self.image_id, f)
         with open(os.path.join(dst, 'DiskDescriptor.xml'), 'w') as f:
             f.write(self.image_info['properties']['pcs_disk_descriptor'])
 
-    def _get_image(self, context, image_id, image_service):
-        tmpl_dir = os.path.join(CONF.pcs_template_dir, image_id)
-        tmpl_file = tmpl_dir + '.tar.lzrw'
-        if os.path.exists(tmpl_file):
-            LOG.info("Using image from cache.")
-            return tmpl_file
+    def _cache_image(self, context, image_service):
+        tmpl_dir = os.path.join(CONF.pcs_template_dir, self.image_id)
+        tmpl_file = self._get_cached_file()
 
         if os.path.exists(tmpl_dir):
             shutil.rmtree(tmpl_dir)
         os.mkdir(tmpl_dir)
 
-        self._download_ploop(context, image_id, image_service, tmpl_dir)
+        self._download_ploop(context, image_service, tmpl_dir)
         self._compress_ploop(tmpl_dir, tmpl_file)
         shutil.rmtree(tmpl_dir)
-
-        return tmpl_file
-
-    def _uncompress_ploop(self, dst):
-        cmd1 = ['prlcompress', '-u']
-        cmd2 = shlex.split(utils.get_root_helper()) + ['tar', 'x', '-C', dst]
-
-        utils.execute('mkdir', dst, run_as_root = True)
-
-        LOG.info("Unpacking image %s to %s" % (self.tmpl_file, dst))
-        src_file = open(self.tmpl_file)
-        try:
-            p1 = subprocess.Popen(cmd1, stdin=src_file, stdout=subprocess.PIPE)
-        finally:
-            src_file.close()
-
-        try:
-            p2 = subprocess.Popen(cmd2, stdin=p1.stdout)
-        except:
-            p1.kill()
-            p1.wait()
-            raise
-
-        p1.stdout.close()
-
-        ret1 = p1.wait()
-        ret2 = p2.wait()
-
-        msg = ""
-        if ret1:
-            msg = '%r returned %d' % (cmd1, ret1)
-        if ret2:
-            msg += ', %r returned %d' % (cmd2, ret2)
-        if msg:
-            raise Exception(msg)
-
-    def _create_ct(self, psrv, instance):
-        sdk_ve = psrv.get_default_vm_config(
-                        prlsdkapi.consts.PVT_CT, 'vswap.1024MB', 0, 0).wait()[0]
-        sdk_ve.set_uuid(instance['uuid'])
-        sdk_ve.set_name(instance['name'])
-        sdk_ve.set_vm_type(prlsdkapi.consts.PVT_CT)
-        sdk_ve.set_os_template(self.image_info['properties']['pcs_ostemplate'])
-        LOG.info("Creating container from eztemplate ...")
-        sdk_ve.reg('', True).wait()
-
-        disk_path = sdk_ve.get_home_path()
-        disk_path = os.path.join(disk_path, 'root.hdd')
-        LOG.info("Removing original disk ...")
-        utils.execute('rm', '-rf', disk_path, run_as_root = True)
-        self._uncompress_ploop(disk_path)
-        LOG.info("Done")
-        return sdk_ve
-
-    def _create_vm(self, psrv, instance):
-        # create an empty VM
-        sdk_ve = psrv.create_vm()
-        srv_cfg = psrv.get_srv_config().wait().get_param()
-        os_ver = getattr(prlconsts, "PVS_GUEST_VER_LIN_REDHAT")
-        sdk_ve.set_default_config(srv_cfg, os_ver, True)
-        sdk_ve.set_uuid('{%s}' % instance['uuid'])
-        sdk_ve.set_name(instance['name'])
-        sdk_ve.set_vm_type(prlsdkapi.consts.PVT_VM)
-
-        # remove unneded devices
-        n = sdk_ve.get_devs_count_by_type(prlconsts.PDE_HARD_DISK)
-        for i in xrange(n):
-            dev = sdk_ve.get_dev_by_type(prlconsts.PDE_HARD_DISK, i)
-            dev.remove()
-
-        n = sdk_ve.get_devs_count_by_type(
-                    prlconsts.PDE_GENERIC_NETWORK_ADAPTER)
-        for i in xrange(n):
-            dev = sdk_ve.get_dev_by_type(
-                        prlconsts.PDE_GENERIC_NETWORK_ADAPTER, i)
-            dev.remove()
-
-        sdk_ve.reg('', True).wait()
-
-        # copy hard disk to VM directory
-        ve_path = os.path.dirname(sdk_ve.get_home_path())
-        disk_path = os.path.join(ve_path, "harddisk.hdd")
-        self._uncompress_ploop(disk_path)
-
-        # add hard disk to VM config and set is as boot device
-        sdk_ve.begin_edit().wait()
-
-        hdd = sdk_ve.add_default_device_ex(srv_cfg, prlconsts.PDE_HARD_DISK)
-        hdd.set_image_path(disk_path)
-
-        b = sdk_ve.create_boot_dev()
-        b.set_type(prlconsts.PDE_HARD_DISK)
-        b.set_index(hdd.get_index())
-        b.set_sequence_index(0)
-        b.set_in_use(1)
-
-        sdk_ve.commit().wait()
-
-        return sdk_ve
-
-    def create_instance(self, psrv, instance):
-        props = self.image_info['properties']
-        if not 'vm_mode' in props or props['vm_mode'] == 'hvm':
-            return self._create_vm(psrv, instance)
-        elif props['vm_mode'] == 'exe':
-            return self._create_ct(psrv, instance)
-        else:
-            raise Exception("Unsupported VM mode '%s'" % props['vm_mode'])
 
 class QemuTemplate(PloopTemplate):
     """
     This class creates instances from images in formats, which
     qemu-img supports.
     """
-    def _download_ploop(self, context, image_id, image_service, dst):
+    def _download_ploop(self, context, image_service, dst):
         glance_img = 'glance.img'
         glance_path = os.path.join(dst, glance_img)
         LOG.info("Download image from glance ...")
         with open(glance_path, 'w') as f:
-            image_service.download(context, image_id, f)
+            image_service.download(context, self.image_id, f)
 
         out, err = utils.execute('qemu-img', 'info',
                                  '--output=json', glance_path)
