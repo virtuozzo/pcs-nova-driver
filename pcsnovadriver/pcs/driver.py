@@ -514,6 +514,8 @@ def get_template(driver, context, image_ref, user_id, project_id):
             return EzTemplate(driver, context, image_ref, user_id, project_id)
         elif image_info['disk_format'] == 'ploop':
             return PloopTemplate(driver, context, image_ref, user_id, project_id)
+        elif image_info['disk_format'] == 'cploop':
+            return LZRWTemplate(driver, context, image_ref, user_id, project_id)
         else:
             return QemuTemplate(driver, context, image_ref, user_id, project_id)
 
@@ -914,3 +916,12 @@ class QemuTemplate(PloopTemplate):
             utils.execute('ploop', 'umount', dd_path, run_as_root=True)
             utils.execute('rm', '-f', dd_path + '.lck')
             os.unlink(glance_path)
+
+class LZRWTemplate(LZRWCacheTemplate):
+    """
+    Class for images stored in cploop format.
+    """
+    def _cache_image(self, context, image_service):
+        LOG.info("Download image from glance ...")
+        with open(self._get_cached_file(), 'w') as f:
+            image_service.download(context, self.image_id, f)
