@@ -39,7 +39,6 @@ from nova.openstack.common.processutils import ProcessExecutionError
 from nova.openstack.common import log as logging
 from nova.virt import driver
 from nova.virt import images
-from nova.virt import firewall
 from nova import utils
 
 from pcsnovadriver.pcs import imagecache
@@ -124,7 +123,6 @@ class PCSDriver(driver.ComputeDriver):
 
         if CONF.firewall_driver != "nova.virt.firewall.NoopFirewallDriver":
             raise NotImplementedError(firewall_msg)
-        self.firewall_driver = firewall.load_driver(None, self.virtapi)
         self.vif_driver = PCSVIFDriver()
         self.image_cache_manager = imagecache.ImageCacheManager()
 
@@ -252,11 +250,6 @@ class PCSDriver(driver.ComputeDriver):
         self._plug_vifs(instance, sdk_ve, network_info)
         self._set_admin_password(sdk_ve, admin_password)
 
-        self.firewall_driver.setup_basic_filtering(instance, network_info)
-        self.firewall_driver.prepare_instance_filter(instance, network_info)
-
-        self.firewall_driver.apply_instance_filter(instance, network_info)
-
     def destroy(self, instance, network_info, block_device_info=None,
                 destroy_disks=True, context=None):
         LOG.info("destroy: %s" % instance['name'])
@@ -274,9 +267,6 @@ class PCSDriver(driver.ComputeDriver):
         if state == prlconsts.VMS_RUNNING:
             sdk_ve.stop_ex(prlconsts.PSM_KILL, prlconsts.PSF_FORCE).wait()
         sdk_ve.delete().wait()
-
-        self.firewall_driver.unfilter_instance(instance,
-                                network_info=network_info)
 
     def get_info(self, instance):
         LOG.info("get_info: %s %s" % (instance['id'], instance['name']))
@@ -423,46 +413,6 @@ class PCSDriver(driver.ComputeDriver):
             LOG.info(_("Snapshot image upload complete"), instance=instance)
         finally:
             tmpl_ve.delete().wait()
-
-    def refresh_security_group_rules(self, security_group_id):
-        LOG.info("refresh_security_group_rules %s" % instance['name'])
-        self.firewall_driver.refresh_security_group_rules(security_group_id)
-
-    def refresh_security_group_members(self, security_group_id):
-        LOG.info("refresh_security_group_members %s" % instance['name'])
-        self.firewall_driver.refresh_security_group_members(security_group_id)
-
-    def refresh_instance_security_rules(self, instance):
-        LOG.info("refresh_instance_security_rules %s" % instance['name'])
-        self.firewall_driver.refresh_instance_security_rules(instance)
-
-    def refresh_provider_fw_rules(self):
-        LOG.info("refresh_provider_fw_rules %s" % instance['name'])
-        self.firewall_driver.refresh_provider_fw_rules()
-
-    def filter_defer_apply_on(self):
-        LOG.info("filter_defer_apply_on %s" % instance['name'])
-        self.firewall_driver.filter_defer_apply_on()
-
-    def filter_defer_apply_off(self):
-        LOG.info("filter_defer_apply_off %s" % instance['name'])
-        self.firewall_driver.filter_defer_apply_off()
-
-    def unfilter_instance(self, instance, network_info):
-        """See comments of same method in firewall_driver."""
-        LOG.info("unfilter_instance %s" % instance['name'])
-        self.firewall_driver.unfilter_instance(instance,
-                                               network_info=network_info)
-
-    def inject_network_info(self, instance, nw_info):
-        LOG.info("inject_network_info %s" % instance['name'])
-        self.firewall_driver.setup_basic_filtering(instance, nw_info)
-
-    def ensure_filtering_rules_for_instance(self, instance, network_info,
-                                            time_module=None):
-        LOG.info("ensure_filtering_rules_for_instance %s" % instance['name'])
-        self.firewall_driver.setup_basic_filtering(instance, network_info)
-        self.firewall_driver.prepare_instance_filter(instance, network_info)
 
     def set_admin_password(self, context, instance_id, new_pass=None):
         LOG.info("set_admin_password %s %s" % (instance_id, new_pass))
