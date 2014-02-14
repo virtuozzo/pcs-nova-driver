@@ -19,6 +19,9 @@ import os
 import re
 import netaddr
 
+import prlsdkapi
+from prlsdkapi import consts as pc
+
 from oslo.config import cfg
 
 from nova import exception
@@ -38,7 +41,6 @@ CONF = cfg.CONF
 CONF.register_opts(pcs_vif_opts)
 
 LOG = logging.getLogger(__name__)
-prlsdkapi = None
 
 def get_bridge_ifaces(bridge):
     return os.listdir(os.path.join('/sys', 'class', 'net', bridge, 'brif'))
@@ -56,13 +58,6 @@ def pcs_create_ovs_vif_port(bridge, dev, iface_id, iface_name,
                   run_as_root=True)
 
 class PCSVIFDriver(object):
-
-    def __init__(self):
-        global prlsdkapi
-        global pc
-        if prlsdkapi is None:
-            prlsdkapi = __import__('prlsdkapi')
-            pc = prlsdkapi.consts
 
     def get_firewall_required(self):
         """Nova's firewall is deprecated, let's assume, that we

@@ -32,7 +32,9 @@ from nova.virt import images
 
 from pcsnovadriver.pcs import utils as pcsutils
 
-prlsdkapi = None
+import prlsdkapi
+from prlsdkapi import consts as pc
+
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
 
@@ -53,11 +55,6 @@ def get_template(driver, context, image_ref, user_id, project_id):
 class PCSTemplate(object):
     def __init__(self, driver, context, image_ref, user_id, project_id):
         LOG.info("%s.__init__" % self.__class__.__name__)
-        global prlsdkapi
-        global pc
-        if prlsdkapi is None:
-            prlsdkapi = __import__('prlsdkapi')
-            pc = prlsdkapi.consts
 
     def create_instance(self, instance):
         raise NotImplementedError()

@@ -21,6 +21,9 @@ import subprocess
 import shlex
 import time
 
+import prlsdkapi
+from prlsdkapi import consts as pc
+
 from oslo.config import cfg
 
 from nova.image import glance
@@ -36,8 +39,6 @@ from nova import utils
 from pcsnovadriver.pcs import imagecache
 from pcsnovadriver.pcs import template
 from pcsnovadriver.pcs.vif import PCSVIFDriver
-
-prlsdkapi = None
 
 LOG = logging.getLogger(__name__)
 
@@ -59,27 +60,25 @@ CONF.register_opts(pcs_opts)
 # FIXME: add this constant to prlsdkapi
 PRL_PRIVILEGED_GUEST_OS_SESSION = "531582ac-3dce-446f-8c26-dd7e3384dcf4"
 
-def pcs_init_state_map():
-    global PCS_POWER_STATE
-    PCS_POWER_STATE = {
-        pc.VMS_COMPACTING:           power_state.NOSTATE,
-        pc.VMS_CONTINUING:           power_state.NOSTATE,
-        pc.VMS_DELETING_STATE:       power_state.NOSTATE,
-        pc.VMS_MIGRATING:            power_state.NOSTATE,
-        pc.VMS_PAUSED:               power_state.PAUSED,
-        pc.VMS_PAUSING:              power_state.RUNNING,
-        pc.VMS_RESETTING:            power_state.RUNNING,
-        pc.VMS_RESTORING:            power_state.NOSTATE,
-        pc.VMS_RESUMING:             power_state.NOSTATE,
-        pc.VMS_RUNNING:              power_state.RUNNING,
-        pc.VMS_SNAPSHOTING:          power_state.RUNNING,
-        pc.VMS_STARTING:             power_state.RUNNING,
-        pc.VMS_STOPPED:              power_state.SHUTDOWN,
-        pc.VMS_STOPPING:             power_state.RUNNING,
-        pc.VMS_SUSPENDED:            power_state.SUSPENDED,
-        pc.VMS_SUSPENDING:           power_state.RUNNING,
-        pc.VMS_SUSPENDING_SYNC:      power_state.NOSTATE,
-    }
+PCS_POWER_STATE = {
+    pc.VMS_COMPACTING:           power_state.NOSTATE,
+    pc.VMS_CONTINUING:           power_state.NOSTATE,
+    pc.VMS_DELETING_STATE:       power_state.NOSTATE,
+    pc.VMS_MIGRATING:            power_state.NOSTATE,
+    pc.VMS_PAUSED:               power_state.PAUSED,
+    pc.VMS_PAUSING:              power_state.RUNNING,
+    pc.VMS_RESETTING:            power_state.RUNNING,
+    pc.VMS_RESTORING:            power_state.NOSTATE,
+    pc.VMS_RESUMING:             power_state.NOSTATE,
+    pc.VMS_RUNNING:              power_state.RUNNING,
+    pc.VMS_SNAPSHOTING:          power_state.RUNNING,
+    pc.VMS_STARTING:             power_state.RUNNING,
+    pc.VMS_STOPPED:              power_state.SHUTDOWN,
+    pc.VMS_STOPPING:             power_state.RUNNING,
+    pc.VMS_SUSPENDED:            power_state.SUSPENDED,
+    pc.VMS_SUSPENDING:           power_state.RUNNING,
+    pc.VMS_SUSPENDING_SYNC:      power_state.NOSTATE,
+}
 
 def get_sdk_errcode(strerr):
     lib_err = getattr(prlsdkapi.prlsdk.errors, strerr)
@@ -103,13 +102,6 @@ class PCSDriver(driver.ComputeDriver):
     def __init__(self, virtapi, read_only=False):
         super(PCSDriver, self).__init__(virtapi)
         LOG.info("__init__")
-
-        global prlsdkapi
-        global pc
-        if prlsdkapi is None:
-            prlsdkapi = __import__('prlsdkapi')
-            pc = prlsdkapi.consts
-            pcs_init_state_map()
 
         self.host = None
         self._host_state = None

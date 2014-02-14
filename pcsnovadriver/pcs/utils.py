@@ -18,6 +18,9 @@
 import subprocess
 import shlex
 
+import prlsdkapi
+from prlsdkapi import consts as pc
+
 def compress_ploop(src, dst):
     cmd1 = ['tar', 'cO', '-C', src, '.']
     cmd2 = ['prlcompress', '-p']
