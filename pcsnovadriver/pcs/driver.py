@@ -42,7 +42,7 @@ from nova.virt import images
 from nova.virt import firewall
 from nova import utils
 
-from nova.virt.libvirt import imagecache
+from pcsnovadriver.pcs import imagecache
 from pcsnovadriver.pcs.vif import PCSVIFDriver
 
 prlsdkapi = None
@@ -103,6 +103,11 @@ in [SECURITYGROUP] section.
 
 class PCSDriver(driver.ComputeDriver):
 
+    capabilities = {
+        "has_imagecache": True,
+        "supports_recreate": False,
+        }
+
     def __init__(self, virtapi, read_only=False):
         super(PCSDriver, self).__init__(virtapi)
         LOG.info("__init__")
@@ -121,6 +126,7 @@ class PCSDriver(driver.ComputeDriver):
             raise NotImplementedError(firewall_msg)
         self.firewall_driver = firewall.load_driver(None, self.virtapi)
         self.vif_driver = PCSVIFDriver()
+        self.image_cache_manager = imagecache.ImageCacheManager()
 
     @property
     def host_state(self):
@@ -462,6 +468,10 @@ class PCSDriver(driver.ComputeDriver):
         LOG.info("set_admin_password %s %s" % (instance_id, new_pass))
         sdk_ve = self._get_ve_by_name(instance_id)
         self._set_admin_password(sdk_ve, new_pass)
+
+    def manage_image_cache(self, context, all_instances):
+        LOG.info("manage_image_cache")
+        self.image_cache_manager.update(context, all_instances)
 
 class HostState(object):
     def __init__(self, driver):
