@@ -30,6 +30,8 @@ from nova.openstack.common import jsonutils
 from nova import utils
 from nova.virt import images
 
+from pcsnovadriver.pcs import utils as pcsutils
+
 prlsdkapi = None
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
@@ -296,72 +298,12 @@ class LZRWCacheTemplate(DiskCacheTemplate):
         return os.path.exists(self._get_cached_file())
 
     def _put_image(self, dst):
-        cmd1 = ['prlcompress', '-u']
-        cmd2 = shlex.split(utils.get_root_helper()) + ['tar', 'x', '-C', dst]
-
         utils.execute('mkdir', dst, run_as_root = True)
-
+        utils.execute('chown', 'nova:nova', dst, run_as_root = True)
         LOG.info("Unpacking image %s to %s" % (self._get_cached_file(), dst))
-        src_file = open(self._get_cached_file())
-        try:
-            p1 = subprocess.Popen(cmd1, stdin=src_file, stdout=subprocess.PIPE)
-        finally:
-            src_file.close()
-
-        try:
-            p2 = subprocess.Popen(cmd2, stdin=p1.stdout)
-        except:
-            p1.kill()
-            p1.wait()
-            raise
-
-        p1.stdout.close()
-
-        ret1 = p1.wait()
-        ret2 = p2.wait()
-
-        msg = ""
-        if ret1:
-            msg = '%r returned %d' % (cmd1, ret1)
-        if ret2:
-            msg += ', %r returned %d' % (cmd2, ret2)
-        if msg:
-            raise Exception(msg)
+        pcsutils.uncompress_ploop(self._get_cached_file(), dst)
 
 class PloopTemplate(LZRWCacheTemplate):
-
-    def _compress_ploop(self, src, dst):
-        cmd1 = ['tar', 'cO', '-C', src, '.']
-        cmd2 = ['prlcompress', '-p']
-
-        LOG.info("Packing image to %s" % dst)
-        dst_file = open(dst, 'w')
-        try:
-            p1 = subprocess.Popen(cmd1, stdout=subprocess.PIPE)
-        except:
-            dst_file.close()
-
-        try:
-            p2 = subprocess.Popen(cmd2, stdin=p1.stdout, stdout=dst_file)
-        except:
-            p1.kill()
-            p1.wait()
-            raise
-        finally:
-            dst_file.close()
-
-        p1.stdout.close()
-
-        ret1 = p1.wait()
-        ret2 = p2.wait()
-
-        msg = ""
-        if ret1:
-            msg = '%r returned %d' % (cmd1, ret1)
-        if ret2:
-            msg += ', %r returned %d' % (cmd2, ret2)
-        if msg:
-            raise Exception(msg)
 
     def _get_image_name(self, disk_descriptor):
         doc = minidom.parseString(disk_descriptor)
@@ -411,7 +353,8 @@ class PloopTemplate(LZRWCacheTemplate):
         os.mkdir(tmpl_dir)
 
         self._download_ploop(context, image_service, tmpl_dir)
-        self._compress_ploop(tmpl_dir, tmpl_file)
+        LOG.info("Packing image to %s" % tmpl_file)
+        pcsutils.compress_ploop(tmpl_dir, tmpl_file)
         shutil.rmtree(tmpl_dir)
 
 class QemuTemplate(PloopTemplate):
