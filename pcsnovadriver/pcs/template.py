@@ -299,7 +299,6 @@ class LZRWCacheTemplate(DiskCacheTemplate):
 
     def _put_image(self, dst):
         utils.execute('mkdir', dst, run_as_root = True)
-        utils.execute('chown', 'nova:nova', dst, run_as_root = True)
         LOG.info("Unpacking image %s to %s" % (self._get_cached_file(), dst))
         pcsutils.uncompress_ploop(self._get_cached_file(), dst)
 
