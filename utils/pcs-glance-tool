@@ -37,7 +37,7 @@ import prlsdkapi
 
 prlconsts = prlsdkapi.consts
 
-DISK_FORMATS = ('Acceptable formats: ploop, vhd, vmdk, '
+DISK_FORMATS = ('Acceptable formats: ploop, cploop, vhd, vmdk, '
                 'raw, qcow2, vdi, and iso.')
 QEMU_IMG_FORMAT = ['vhd', 'vmdk', 'raw', 'qcow2', 'vdi', 'iso']
 
@@ -80,6 +80,33 @@ def convert_image(src, dst, disk_format):
                     '-O', disk_format, ploop_dev, dst])
     finally:
         system_exc(['ploop', 'umount', dd_path])
+
+def upload_compressed_ploop(gc, image_id, hdd_path):
+    cmd1 = ['tar', 'cO', '-C', hdd_path, '.']
+    cmd2 = ['prlcompress', '-p']
+
+    p1 = subprocess.Popen(cmd1, stdout=subprocess.PIPE)
+
+    try:
+        p2 = subprocess.Popen(cmd2, stdin=p1.stdout, stdout=subprocess.PIPE)
+    except:
+        p1.kill()
+        p1.wait()
+        raise
+
+    p1.stdout.close()
+    gc.images.upload(image_id, p2.stdout)
+
+    ret1 = p1.wait()
+    ret2 = p2.wait()
+
+    msg = ""
+    if ret1:
+        msg = '%r returned %d' % (cmd1, ret1)
+    if ret2:
+        msg += ', %r returned %d' % (cmd2, ret2)
+    if msg:
+        raise Exception(msg)
 
 class PCSImagesShell(OpenStackImagesShell):
 
@@ -153,7 +180,7 @@ class PCSImagesShell(OpenStackImagesShell):
         if args.os_image_api_version != '2':
             raise Exception('Only image API version 2 is supported.')
 
-        if args.disk_format not in ['ploop'] + QEMU_IMG_FORMAT:
+        if args.disk_format not in ['ploop', 'cploop'] + QEMU_IMG_FORMAT:
             raise Exception("Disk format '%s' is not supported." % \
                                                     args.disk_format)
 
@@ -191,14 +218,15 @@ class PCSImagesShell(OpenStackImagesShell):
             else:
                 hdd = self._get_ct_boot_disk(image_ve)
             hdd_path = hdd.get_image_path()
-            xml_path = os.path.join(hdd_path, "DiskDescriptor.xml")
-            cmd = "ploop snapshot-list -H -o fname %s" % xml_path
-            out = commands.getoutput(cmd)
-            image_path = out.strip()
 
             extra_fields = {}
 
             if args.disk_format == 'ploop':
+                xml_path = os.path.join(hdd_path, "DiskDescriptor.xml")
+                cmd = "ploop snapshot-list -H -o fname %s" % xml_path
+                out = commands.getoutput(cmd)
+                image_path = out.strip()
+
                 with open(image_path) as f:
                     gc.images.upload(image.id, f)
 
@@ -207,6 +235,8 @@ class PCSImagesShell(OpenStackImagesShell):
 
                 # Glance API v1 doesn't support line breaks
                 extra_fields['pcs_disk_descriptor'] = desc.replace('\n', '')
+            elif args.disk_format == 'cploop':
+                upload_compressed_ploop(gc, image.id, hdd_path)
             else:
                 dst = tempfile.mktemp(dir=os.path.dirname(hdd_path))
                 convert_image(hdd_path, dst, args.disk_format)
