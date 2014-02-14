@@ -16,6 +16,7 @@
 #    under the License.
 
 import subprocess
+import shlex
 
 from nova import utils
 
