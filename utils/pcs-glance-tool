@@ -43,46 +43,6 @@ DISK_FORMATS = ('Acceptable formats: ploop, cploop, vhd, vmdk, '
                 'raw, qcow2, vdi, and iso.')
 QEMU_IMG_FORMAT = ['vhd', 'vmdk', 'raw', 'qcow2', 'vdi', 'iso']
 
-def getstatusoutput(cmd):
-    """
-    getstatusoutput from commands module supports only string
-    commands, which isn't convenient.
-    """
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-    out = p.stdout.read()
-    ret = p.wait()
-    return ret, out
-
-def system_exc(cmd):
-    """
-    Run command and raise exception in case of non-zero
-    exit code.
-    """
-    p = subprocess.call(cmd)
-    if p:
-        raise Exception("'%r' returned %d" % (cmd, ret))
-
-def convert_image(src, dst, disk_format):
-    """
-    Convert image from ploop format to any, that qemu-img supports.
-    src: path to directory with ploop
-    dst: path to output file name
-    disk_format: disk format string
-    """
-    dd_path = os.path.join(src, 'DiskDescriptor.xml')
-    cmd = ['ploop', 'mount', dd_path]
-    ret, out = getstatusoutput(cmd)
-    try:
-        ro = re.search('dev=(\S+)', out)
-        if not ro:
-            raise Exception('Invalid output from %r: %s' % (cmd, out))
-        ploop_dev = ro.group(1)
-
-        system_exc(['qemu-img', 'convert', '-f', 'raw',
-                    '-O', disk_format, ploop_dev, dst])
-    finally:
-        system_exc(['ploop', 'umount', dd_path])
-
 def upload_compressed_ploop(gc, image_id, hdd_path):
     cmd1 = ['tar', 'cO', '-C', hdd_path, '.']
     cmd2 = ['prlcompress', '-p']
@@ -214,7 +174,7 @@ class PCSImagesShell(OpenStackImagesShell):
                 upload_compressed_ploop(gc, image.id, hdd_path)
             else:
                 dst = tempfile.mktemp(dir=os.path.dirname(hdd_path))
-                convert_image(hdd_path, dst, args.disk_format)
+                pcsutils.convert_image(hdd_path, dst, args.disk_format)
                 with open(dst) as f:
                     gc.images.upload(image.id, f)
                 os.unlink(dst)

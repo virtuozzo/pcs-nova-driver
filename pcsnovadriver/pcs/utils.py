@@ -15,6 +15,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import os
+import re
 import subprocess
 import shlex
 
@@ -112,4 +114,44 @@ def get_boot_disk(ve):
         return _get_vm_boot_disk(ve)
     else:
         return _get_ct_boot_disk(ve)
+
+def getstatusoutput(cmd):
+    """
+    getstatusoutput from commands module supports only string
+    commands, which isn't convenient.
+    """
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    out = p.stdout.read()
+    ret = p.wait()
+    return ret, out
+
+def system_exc(cmd):
+    """
+    Run command and raise exception in case of non-zero
+    exit code.
+    """
+    p = subprocess.call(cmd)
+    if p:
+        raise Exception("'%r' returned %d" % (cmd, ret))
+
+def convert_image(src, dst, disk_format):
+    """
+    Convert image from ploop format to any, that qemu-img supports.
+    src: path to directory with ploop
+    dst: path to output file name
+    disk_format: disk format string
+    """
+    dd_path = os.path.join(src, 'DiskDescriptor.xml')
+    cmd = ['ploop', 'mount', dd_path]
+    ret, out = getstatusoutput(cmd)
+    try:
+        ro = re.search('dev=(\S+)', out)
+        if not ro:
+            raise Exception('Invalid output from %r: %s' % (cmd, out))
+        ploop_dev = ro.group(1)
+
+        system_exc(['qemu-img', 'convert', '-f', 'raw',
+                    '-O', disk_format, ploop_dev, dst])
+    finally:
+        system_exc(['ploop', 'umount', dd_path])
 
