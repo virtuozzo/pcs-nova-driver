@@ -83,3 +83,33 @@ def uncompress_ploop(src, dst, root_helper=""):
     if msg:
         raise Exception(msg)
 
+def _get_ct_boot_disk(ve):
+    """
+    Get first disk in config.
+    """
+    hdd_count = ve.get_devs_count_by_type(pc.PDE_HARD_DISK)
+    if hdd_count < 1:
+        raise Exception("There are no hard disks in VE.")
+    return ve.get_dev_by_type(pc.PDE_HARD_DISK, 0)
+
+def _get_vm_boot_disk(ve):
+    """
+    Get first hard disk from the boot devices list.
+    """
+    n = ve.get_boot_dev_count()
+    for i in xrange(n):
+        bootdev = ve.get_boot_dev(i)
+        if bootdev.get_type() != pc.PDE_HARD_DISK:
+            continue
+        hdd = ve.get_dev_by_type(pc.PDE_HARD_DISK,
+                                    bootdev.get_index())
+        return hdd
+    else:
+        raise Exception("Can't find boot hard disk.")
+
+def get_boot_disk(ve):
+    if ve.get_vm_type() == pc.PVT_VM:
+        return _get_vm_boot_disk(ve)
+    else:
+        return _get_ct_boot_disk(ve)
+

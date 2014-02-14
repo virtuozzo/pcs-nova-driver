@@ -33,6 +33,8 @@ from glanceclient.openstack.common import strutils
 from glanceclient.common import utils
 from glanceclient.shell import OpenStackImagesShell
 
+from pcsnovadriver.pcs import utils as pcsutils
+
 import prlsdkapi
 
 prlconsts = prlsdkapi.consts
@@ -127,36 +129,6 @@ class PCSImagesShell(OpenStackImagesShell):
             srv.login(login, passwd)
         return srv
 
-    def _get_ct_boot_disk(self, ve):
-        """
-        Get first disk in config.
-        """
-        hdd_count = ve.get_devs_count_by_type(prlconsts.PDE_HARD_DISK)
-        if hdd_count < 1:
-            raise Exception("There are no hard disks in VE.")
-        return ve.get_dev_by_type(prlconsts.PDE_HARD_DISK, 0)
-
-    def _get_vm_boot_disk(self, ve):
-        """
-        Get first hard disk from the boot devices list.
-        """
-        n = ve.get_boot_dev_count()
-        for i in xrange(n):
-            bootdev = ve.get_boot_dev(i)
-            if bootdev.get_type() != prlconsts.PDE_HARD_DISK:
-                continue
-            hdd = ve.get_dev_by_type(prlconsts.PDE_HARD_DISK,
-                                        bootdev.get_index())
-            return hdd
-        else:
-            raise Exception("Can't find boot hard disk.")
-
-    def _get_boot_disk(self, ve):
-        if ve.get_vm_type() == prlconsts.PVT_VM:
-            return self._get_vm_boot_disk(ve)
-        else:
-            return self._get_ct_boot_disk(ve)
-
     @utils.arg('ve_name', metavar='<VE_NAME>',
                help='Name or UUID of VM.')
     @utils.arg('--name', metavar='<NAME>',
@@ -219,7 +191,7 @@ class PCSImagesShell(OpenStackImagesShell):
                               prlconsts.PCVF_CLONE_TO_TEMPLATE)
             image_ve = job.wait().get_param()
 
-            hdd = self._get_boot_disk(image_ve)
+            hdd = pcsutils.get_boot_disk(image_ve)
             hdd_path = hdd.get_image_path()
 
             extra_fields = {}
