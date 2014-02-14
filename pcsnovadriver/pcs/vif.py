@@ -59,10 +59,10 @@ class PCSVIFDriver(object):
 
     def __init__(self):
         global prlsdkapi
-        global prlconsts
+        global pc
         if prlsdkapi is None:
             prlsdkapi = __import__('prlsdkapi')
-            prlconsts = prlsdkapi.consts
+            pc = prlsdkapi.consts
 
     def get_firewall_required(self):
         """Nova's firewall is deprecated, let's assume, that we
@@ -119,7 +119,7 @@ class BaseVif:
             return vif['network']['bridge']
 
     def get_prl_name(self, sdk_ve, netdev):
-        if sdk_ve.get_vm_type() == prlconsts.PVT_VM:
+        if sdk_ve.get_vm_type() == pc.PVT_VM:
             return "vme%08x.%d" % (sdk_ve.get_env_id(), netdev.get_index())
         else:
             return "veth%d.%d" % (sdk_ve.get_env_id(), netdev.get_index())
@@ -129,12 +129,10 @@ class BaseVif:
         or None, if it's not found.
         """
         mac = netaddr.EUI(mac)
-        ndevs = sdk_ve.get_devs_count_by_type(
-                    prlconsts.PDE_GENERIC_NETWORK_ADAPTER)
+        ndevs = sdk_ve.get_devs_count_by_type(pc.PDE_GENERIC_NETWORK_ADAPTER)
         for i in xrange(ndevs):
-            netdev = sdk_ve.get_dev_by_type(
-                            prlconsts.PDE_GENERIC_NETWORK_ADAPTER, i)
-            if netdev.get_emulated_type() == prlconsts.PNA_ROUTED:
+            netdev = sdk_ve.get_dev_by_type(pc.PDE_GENERIC_NETWORK_ADAPTER, i)
+            if netdev.get_emulated_type() == pc.PNA_ROUTED:
                 continue
             if netaddr.EUI(netdev.get_mac_address()) == mac:
                 return netdev
@@ -150,7 +148,7 @@ class BaseVif:
         srv_config = driver.psrv.get_srv_config().wait()[0]
         sdk_ve.begin_edit().wait()
         netdev = sdk_ve.add_default_device_ex(srv_config,
-                                prlconsts.PDE_GENERIC_NETWORK_ADAPTER)
+                                pc.PDE_GENERIC_NETWORK_ADAPTER)
         mac = netaddr.EUI(vif['address'])
         mac.dialect = netaddr.mac_bare
         netdev.set_mac_address(str(mac))
@@ -242,7 +240,7 @@ class VifOvsHybrid(BaseVif):
 
         self.configure_ip(sdk_ve, netdev, vif)
 
-        if sdk_ve.get_vm_type() == prlconsts.PVT_VM and \
+        if sdk_ve.get_vm_type() == pc.PVT_VM and \
                 if_name not in get_bridge_ifaces(br_name):
             # FIXME: dispatcher removes interface from bridge after
             # changing configuration

@@ -52,10 +52,10 @@ class PCSTemplate(object):
     def __init__(self, driver, context, image_ref, user_id, project_id):
         LOG.info("%s.__init__" % self.__class__.__name__)
         global prlsdkapi
-        global prlconsts
+        global pc
         if prlsdkapi is None:
             prlsdkapi = __import__('prlsdkapi')
-            prlconsts = prlsdkapi.consts
+            pc = prlsdkapi.consts
 
     def create_instance(self, instance):
         raise NotImplementedError()
@@ -234,23 +234,21 @@ class DiskCacheTemplate(PCSTemplate):
         # create an empty VM
         sdk_ve = psrv.create_vm()
         srv_cfg = psrv.get_srv_config().wait().get_param()
-        os_ver = getattr(prlconsts, "PVS_GUEST_VER_LIN_REDHAT")
+        os_ver = getattr(pc, "PVS_GUEST_VER_LIN_REDHAT")
         sdk_ve.set_default_config(srv_cfg, os_ver, True)
         sdk_ve.set_uuid('{%s}' % instance['uuid'])
         sdk_ve.set_name(instance['name'])
         sdk_ve.set_vm_type(prlsdkapi.consts.PVT_VM)
 
         # remove unneded devices
-        n = sdk_ve.get_devs_count_by_type(prlconsts.PDE_HARD_DISK)
+        n = sdk_ve.get_devs_count_by_type(pc.PDE_HARD_DISK)
         for i in xrange(n):
-            dev = sdk_ve.get_dev_by_type(prlconsts.PDE_HARD_DISK, i)
+            dev = sdk_ve.get_dev_by_type(pc.PDE_HARD_DISK, i)
             dev.remove()
 
-        n = sdk_ve.get_devs_count_by_type(
-                    prlconsts.PDE_GENERIC_NETWORK_ADAPTER)
+        n = sdk_ve.get_devs_count_by_type(pc.PDE_GENERIC_NETWORK_ADAPTER)
         for i in xrange(n):
-            dev = sdk_ve.get_dev_by_type(
-                        prlconsts.PDE_GENERIC_NETWORK_ADAPTER, i)
+            dev = sdk_ve.get_dev_by_type(pc.PDE_GENERIC_NETWORK_ADAPTER, i)
             dev.remove()
 
         sdk_ve.reg('', True).wait()
@@ -263,11 +261,11 @@ class DiskCacheTemplate(PCSTemplate):
         # add hard disk to VM config and set is as boot device
         sdk_ve.begin_edit().wait()
 
-        hdd = sdk_ve.add_default_device_ex(srv_cfg, prlconsts.PDE_HARD_DISK)
+        hdd = sdk_ve.add_default_device_ex(srv_cfg, pc.PDE_HARD_DISK)
         hdd.set_image_path(disk_path)
 
         b = sdk_ve.create_boot_dev()
-        b.set_type(prlconsts.PDE_HARD_DISK)
+        b.set_type(pc.PDE_HARD_DISK)
         b.set_index(hdd.get_index())
         b.set_sequence_index(0)
         b.set_in_use(1)

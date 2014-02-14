@@ -62,23 +62,23 @@ PRL_PRIVILEGED_GUEST_OS_SESSION = "531582ac-3dce-446f-8c26-dd7e3384dcf4"
 def pcs_init_state_map():
     global PCS_POWER_STATE
     PCS_POWER_STATE = {
-        prlconsts.VMS_COMPACTING:           power_state.NOSTATE,
-        prlconsts.VMS_CONTINUING:           power_state.NOSTATE,
-        prlconsts.VMS_DELETING_STATE:       power_state.NOSTATE,
-        prlconsts.VMS_MIGRATING:            power_state.NOSTATE,
-        prlconsts.VMS_PAUSED:               power_state.PAUSED,
-        prlconsts.VMS_PAUSING:              power_state.RUNNING,
-        prlconsts.VMS_RESETTING:            power_state.RUNNING,
-        prlconsts.VMS_RESTORING:            power_state.NOSTATE,
-        prlconsts.VMS_RESUMING:             power_state.NOSTATE,
-        prlconsts.VMS_RUNNING:              power_state.RUNNING,
-        prlconsts.VMS_SNAPSHOTING:          power_state.RUNNING,
-        prlconsts.VMS_STARTING:             power_state.RUNNING,
-        prlconsts.VMS_STOPPED:              power_state.SHUTDOWN,
-        prlconsts.VMS_STOPPING:             power_state.RUNNING,
-        prlconsts.VMS_SUSPENDED:            power_state.SUSPENDED,
-        prlconsts.VMS_SUSPENDING:           power_state.RUNNING,
-        prlconsts.VMS_SUSPENDING_SYNC:      power_state.NOSTATE,
+        pc.VMS_COMPACTING:           power_state.NOSTATE,
+        pc.VMS_CONTINUING:           power_state.NOSTATE,
+        pc.VMS_DELETING_STATE:       power_state.NOSTATE,
+        pc.VMS_MIGRATING:            power_state.NOSTATE,
+        pc.VMS_PAUSED:               power_state.PAUSED,
+        pc.VMS_PAUSING:              power_state.RUNNING,
+        pc.VMS_RESETTING:            power_state.RUNNING,
+        pc.VMS_RESTORING:            power_state.NOSTATE,
+        pc.VMS_RESUMING:             power_state.NOSTATE,
+        pc.VMS_RUNNING:              power_state.RUNNING,
+        pc.VMS_SNAPSHOTING:          power_state.RUNNING,
+        pc.VMS_STARTING:             power_state.RUNNING,
+        pc.VMS_STOPPED:              power_state.SHUTDOWN,
+        pc.VMS_STOPPING:             power_state.RUNNING,
+        pc.VMS_SUSPENDED:            power_state.SUSPENDED,
+        pc.VMS_SUSPENDING:           power_state.RUNNING,
+        pc.VMS_SUSPENDING_SYNC:      power_state.NOSTATE,
     }
 
 def get_sdk_errcode(strerr):
@@ -105,10 +105,10 @@ class PCSDriver(driver.ComputeDriver):
         LOG.info("__init__")
 
         global prlsdkapi
-        global prlconsts
+        global pc
         if prlsdkapi is None:
             prlsdkapi = __import__('prlsdkapi')
-            prlconsts = prlsdkapi.consts
+            pc = prlsdkapi.consts
             pcs_init_state_map()
 
         self.host = None
@@ -136,13 +136,13 @@ class PCSDriver(driver.ComputeDriver):
 
     def list_instances(self):
         LOG.info("list_instances")
-        flags = prlconsts.PVTF_CT|prlconsts.PVTF_VM
+        flags = pc.PVTF_CT|pc.PVTF_VM
         ves = self.psrv.get_vm_list_ex(nFlags=flags).wait()
         return map(lambda x: x.get_name(), ves)
 
     def list_instance_uuids(self):
         LOG.info("list_instance_uuids")
-        flags = prlconsts.PVTF_CT|prlconsts.PVTF_VM
+        flags = pc.PVTF_CT|pc.PVTF_VM
         ves = self.psrv.get_vm_list_ex(nFlags = flags).wait()
         return map(lambda x: x.get_uuid()[1:-1], ves)
 
@@ -197,26 +197,26 @@ class PCSDriver(driver.ComputeDriver):
         sdk_ve.set_cpu_count(int(metadata['instance_type_vcpus']))
 
         sdk_ve.set_ram_size(int(metadata['instance_type_memory_mb']))
-        if sdk_ve.get_vm_type() == prlconsts.PVT_CT:
+        if sdk_ve.get_vm_type() == pc.PVT_CT:
             # Can't tune physpages and swappages for VMs
             physpages = int(metadata['instance_type_memory_mb']) << 8
-            sdk_ve.set_resource(prlconsts.PCR_PHYSPAGES, physpages, physpages)
+            sdk_ve.set_resource(pc.PCR_PHYSPAGES, physpages, physpages)
 
             swappages = int(metadata['instance_type_swap']) << 8
-            sdk_ve.set_resource(prlconsts.PCR_SWAPPAGES, swappages, swappages)
+            sdk_ve.set_resource(pc.PCR_SWAPPAGES, swappages, swappages)
         sdk_ve.commit().wait()
 
         # TODO: tune swap size in VMs
 
-        ndisks = sdk_ve.get_devs_count_by_type(prlconsts.PDE_HARD_DISK)
+        ndisks = sdk_ve.get_devs_count_by_type(pc.PDE_HARD_DISK)
         if ndisks != 1:
             raise Exception("More than one disk in container")
-        disk = sdk_ve.get_dev_by_type(prlconsts.PDE_HARD_DISK, 0)
+        disk = sdk_ve.get_dev_by_type(pc.PDE_HARD_DISK, 0)
         disk_size = int(metadata['instance_type_root_gb']) << 10
         disk.resize_image(disk_size, 0).wait()
 
     def _set_admin_password(self, sdk_ve, admin_password):
-        if sdk_ve.get_vm_type() == prlconsts.PVT_VM:
+        if sdk_ve.get_vm_type() == pc.PVT_VM:
             # FIXME: waiting for system boot is broken for VMs
             LOG.info("Skip setting admin password")
             return
@@ -237,8 +237,7 @@ class PCSDriver(driver.ComputeDriver):
         self._reset_network(sdk_ve)
         for vif in network_info:
             self.vif_driver.setup_dev(self, instance, sdk_ve, vif)
-        sdk_ve.start_ex(prlconsts.PSM_VM_START,
-                    prlconsts.PNSF_VM_START_WAIT).wait()
+        sdk_ve.start_ex(pc.PSM_VM_START, pc.PNSF_VM_START_WAIT).wait()
 
         self._plug_vifs(instance, sdk_ve, network_info)
         self._set_admin_password(sdk_ve, admin_password)
@@ -257,8 +256,8 @@ class PCSDriver(driver.ComputeDriver):
         self._unplug_vifs(instance, sdk_ve, network_info)
 
         # TODO: handle all possible states
-        if state == prlconsts.VMS_RUNNING:
-            sdk_ve.stop_ex(prlconsts.PSM_KILL, prlconsts.PSF_FORCE).wait()
+        if state == pc.VMS_RUNNING:
+            sdk_ve.stop_ex(pc.PSM_KILL, pc.PSF_FORCE).wait()
         sdk_ve.delete().wait()
 
     def get_info(self, instance):
@@ -290,7 +289,7 @@ class PCSDriver(driver.ComputeDriver):
         if reboot_type == 'SOFT':
             sdk_ve.restart().wait()
         else:
-            sdk_ve.stop_ex(prlconsts.PSM_KILL, 0).wait()
+            sdk_ve.stop_ex(pc.PSM_KILL, 0).wait()
             sdk_ve.start().wait()
         self._plug_vifs(instance, sdk_ve, network_info)
 
@@ -308,7 +307,7 @@ class PCSDriver(driver.ComputeDriver):
     def power_off(self, instance):
         LOG.info("power_off %s" % instance['name'])
         sdk_ve = self._get_ve_by_name(instance['name'])
-        sdk_ve.stop_ex(prlconsts.PSM_ACPI, prlconsts.PSF_FORCE).wait()
+        sdk_ve.stop_ex(pc.PSM_ACPI, pc.PSF_FORCE).wait()
 
     def power_on(self, context, instance, network_info,
                     block_device_info=None):
@@ -322,9 +321,9 @@ class PCSDriver(driver.ComputeDriver):
         LOG.info("get_vnc_console %s" % instance['name'])
         sdk_ve = self._get_ve_by_name(instance['name'])
 
-        if sdk_ve.get_vncmode() != prlconsts.PRD_AUTO:
+        if sdk_ve.get_vncmode() != pc.PRD_AUTO:
             sdk_ve.begin_edit().wait()
-            sdk_ve.set_vncmode(prlconsts.PRD_AUTO)
+            sdk_ve.set_vncmode(pc.PRD_AUTO)
             sdk_ve.commit().wait()
             sdk_ve.refresh_config()
 
@@ -347,12 +346,11 @@ class PCSDriver(driver.ComputeDriver):
         can't be removed).
         """
         ndevs = sdk_ve.get_devs_count_by_type(
-                    prlconsts.PDE_GENERIC_NETWORK_ADAPTER)
+                    pc.PDE_GENERIC_NETWORK_ADAPTER)
         sdk_ve.begin_edit().wait()
         for i in xrange(ndevs):
-            dev = sdk_ve.get_dev_by_type(
-                        prlconsts.PDE_GENERIC_NETWORK_ADAPTER, i)
-            if dev.get_emulated_type() != prlconsts.PNA_ROUTED:
+            dev = sdk_ve.get_dev_by_type(pc.PDE_GENERIC_NETWORK_ADAPTER, i)
+            if dev.get_emulated_type() != pc.PNA_ROUTED:
                 dev.remove()
         sdk_ve.commit().wait()
 
@@ -364,7 +362,7 @@ class PCSDriver(driver.ComputeDriver):
         update_task_state(task_state=task_states.IMAGE_PENDING_UPLOAD)
 
         tmpl_ve = sdk_ve.clone_ex("tmpl-" + image_id, '',
-                prlconsts.PCVF_CLONE_TO_TEMPLATE).wait().get_param()
+                pc.PCVF_CLONE_TO_TEMPLATE).wait().get_param()
 
         self._reset_network(tmpl_ve)
 
@@ -380,7 +378,7 @@ class PCSDriver(driver.ComputeDriver):
                         'container_format': 'bare',
             }
 
-            if tmpl_ve.get_vm_type() == prlconsts.PVT_VM:
+            if tmpl_ve.get_vm_type() == pc.PVT_VM:
                 metadata['disk_format'] = 'ploop-vm'
             else:
                 metadata['disk_format'] = 'ploop-container'
@@ -389,7 +387,7 @@ class PCSDriver(driver.ComputeDriver):
                         expected_state=task_states.IMAGE_PENDING_UPLOAD)
 
             ve_dir = tmpl_ve.get_home_path()
-            if tmpl_ve.get_vm_type() == prlconsts.PVT_VM:
+            if tmpl_ve.get_vm_type() == pc.PVT_VM:
                 # for containers get_home_path returns path
                 # to private area, but for VMs - path to VM
                 # config file.
