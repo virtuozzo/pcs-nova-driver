@@ -151,6 +151,12 @@ class PCSImagesShell(OpenStackImagesShell):
         else:
             raise Exception("Can't find boot hard disk.")
 
+    def _get_boot_disk(self, ve):
+        if ve.get_vm_type() == prlconsts.PVT_VM:
+            return self._get_vm_boot_disk(ve)
+        else:
+            return self._get_ct_boot_disk(ve)
+
     @utils.arg('ve_name', metavar='<VE_NAME>',
                help='Name or UUID of VM.')
     @utils.arg('--name', metavar='<NAME>',
@@ -213,10 +219,7 @@ class PCSImagesShell(OpenStackImagesShell):
                               prlconsts.PCVF_CLONE_TO_TEMPLATE)
             image_ve = job.wait().get_param()
 
-            if ve.get_vm_type() == prlconsts.PVT_VM:
-                hdd = self._get_vm_boot_disk(image_ve)
-            else:
-                hdd = self._get_ct_boot_disk(image_ve)
+            hdd = self._get_boot_disk(image_ve)
             hdd_path = hdd.get_image_path()
 
             extra_fields = {}
