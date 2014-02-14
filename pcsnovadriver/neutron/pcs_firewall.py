@@ -103,5 +103,8 @@ class PCSIptablesFirewallDriver(IptablesFirewallDriver):
     """
     def _get_device_name(self, port):
         br = cfg.CONF.OVS.integration_bridge
-        xport = get_ovs_vif_port_by_id(br, port['device'])
+        try:
+            xport = get_ovs_vif_port_by_id(br, port['device'])
+        except:
+            LOG.warn('Skipping firewall setup for port %s' % port['device'])
         return xport['external_ids']['iface-name']
