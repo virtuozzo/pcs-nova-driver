@@ -18,8 +18,6 @@
 import subprocess
 import shlex
 
-from nova import utils
-
 def compress_ploop(src, dst):
     cmd1 = ['tar', 'cO', '-C', src, '.']
     cmd2 = ['prlcompress', '-p']
@@ -52,9 +50,9 @@ def compress_ploop(src, dst):
     if msg:
         raise Exception(msg)
 
-def uncompress_ploop(src, dst):
+def uncompress_ploop(src, dst, root_helper=""):
     cmd1 = ['prlcompress', '-u']
-    cmd2 = shlex.split(utils.get_root_helper()) + ['tar', 'x', '-C', dst]
+    cmd2 = shlex.split(root_helper) + ['tar', 'x', '-C', dst]
 
     src_file = open(src)
     try:
