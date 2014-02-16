@@ -43,41 +43,8 @@ DISK_FORMATS = ('Acceptable formats: ploop, cploop, vhd, vmdk, '
                 'raw, qcow2, vdi, and iso.')
 QEMU_IMG_FORMAT = ['vhd', 'vmdk', 'raw', 'qcow2', 'vdi', 'iso']
 
-class CPloopUploader(object):
-    def __init__(self, hdd_path):
-        self.hdd_path = hdd_path
-
-    def start(self):
-        self.cmd1 = ['tar', 'cO', '-C', self.hdd_path, '.']
-        self.cmd2 = ['prlcompress', '-p']
-
-        self.p1 = subprocess.Popen(self.cmd1, stdout=subprocess.PIPE)
-
-        try:
-            self.p2 = subprocess.Popen(self.cmd2, stdin=self.p1.stdout,
-                                             stdout=subprocess.PIPE)
-        except:
-            self.p1.kill()
-            self.p1.wait()
-            raise
-
-        self.p1.stdout.close()
-        return self.p2.stdout
-
-    def wait(self):
-        ret1 = self.p1.wait()
-        ret2 = self.p2.wait()
-
-        msg = ""
-        if ret1:
-            msg = '%r returned %d' % (self.cmd1, ret1)
-        if ret2:
-            msg += ', %r returned %d' % (self.cmd2, ret2)
-        if msg:
-            raise Exception(msg)
-
 def upload_compressed_ploop(gc, image_id, hdd_path):
-    uploader = CPloopUploader(hdd_path)
+    uploader = pcsutils.CPloopUploader(hdd_path)
     fd = uploader.start()
     try:
         gc.images.upload(image_id, fd)

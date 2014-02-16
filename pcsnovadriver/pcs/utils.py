@@ -155,3 +155,36 @@ def convert_image(src, dst, disk_format):
     finally:
         system_exc(['ploop', 'umount', dd_path])
 
+class CPloopUploader(object):
+    def __init__(self, hdd_path):
+        self.hdd_path = hdd_path
+
+    def start(self):
+        self.cmd1 = ['tar', 'cO', '-C', self.hdd_path, '.']
+        self.cmd2 = ['prlcompress', '-p']
+
+        self.p1 = subprocess.Popen(self.cmd1, stdout=subprocess.PIPE)
+
+        try:
+            self.p2 = subprocess.Popen(self.cmd2, stdin=self.p1.stdout,
+                                             stdout=subprocess.PIPE)
+        except:
+            self.p1.kill()
+            self.p1.wait()
+            raise
+
+        self.p1.stdout.close()
+        return self.p2.stdout
+
+    def wait(self):
+        ret1 = self.p1.wait()
+        ret2 = self.p2.wait()
+
+        msg = ""
+        if ret1:
+            msg = '%r returned %d' % (self.cmd1, ret1)
+        if ret2:
+            msg += ', %r returned %d' % (self.cmd2, ret2)
+        if msg:
+            raise Exception(msg)
+
