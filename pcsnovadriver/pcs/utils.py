@@ -130,8 +130,8 @@ def system_exc(cmd):
     Run command and raise exception in case of non-zero
     exit code.
     """
-    p = subprocess.call(cmd)
-    if p:
+    ret = subprocess.call(cmd)
+    if ret:
         raise Exception("'%r' returned %d" % (cmd, ret))
 
 def convert_image(src, dst, disk_format):
