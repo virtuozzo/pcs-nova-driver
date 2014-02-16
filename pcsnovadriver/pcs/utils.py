@@ -134,7 +134,7 @@ def system_exc(cmd):
     if ret:
         raise Exception("'%r' returned %d" % (cmd, ret))
 
-def convert_image(src, dst, disk_format):
+def convert_image(src, dst, disk_format, root_helper=''):
     """
     Convert image from ploop format to any, that qemu-img supports.
     src: path to directory with ploop
@@ -142,7 +142,7 @@ def convert_image(src, dst, disk_format):
     disk_format: disk format string
     """
     dd_path = os.path.join(src, 'DiskDescriptor.xml')
-    cmd = ['ploop', 'mount', dd_path]
+    cmd = shlex.split(root_helper) + ['ploop', 'mount', dd_path]
     ret, out = getstatusoutput(cmd)
     try:
         ro = re.search('dev=(\S+)', out)
@@ -150,10 +150,10 @@ def convert_image(src, dst, disk_format):
             raise Exception('Invalid output from %r: %s' % (cmd, out))
         ploop_dev = ro.group(1)
 
-        system_exc(['qemu-img', 'convert', '-f', 'raw',
+        system_exc(shlex.split(root_helper) + ['qemu-img', 'convert', '-f', 'raw',
                     '-O', disk_format, ploop_dev, dst])
     finally:
-        system_exc(['ploop', 'umount', dd_path])
+        system_exc(shlex.split(root_helper) + ['ploop', 'umount', dd_path])
 
 class CPloopUploader(object):
     def __init__(self, hdd_path):
