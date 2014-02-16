@@ -20,6 +20,7 @@ import os
 import subprocess
 import shlex
 import time
+import tempfile
 
 import prlsdkapi
 from prlsdkapi import consts as pc
@@ -38,6 +39,7 @@ from nova import utils
 
 from pcsnovadriver.pcs import imagecache
 from pcsnovadriver.pcs import template
+from pcsnovadriver.pcs import utils as pcsutils
 from pcsnovadriver.pcs.vif import PCSVIFDriver
 
 LOG = logging.getLogger(__name__)
@@ -52,6 +54,14 @@ pcs_opts = [
     cfg.StrOpt('pcs_template_dir',
                 default = '/vz/openstack-templates',
                 help = 'Directory for storing image cache.'),
+
+    cfg.StrOpt('pcs_snapshot_disk_format',
+                default = 'cploop',
+                help = 'Disk format for snapshots.'),
+
+    cfg.StrOpt('pcs_snapshot_dir',
+                default = '/vz/openstack-snapshots',
+                help = 'Directory for snapshot operation.'),
     ]
 
 CONF = cfg.CONF
@@ -345,6 +355,91 @@ class PCSDriver(driver.ComputeDriver):
             if dev.get_emulated_type() != pc.PNA_ROUTED:
                 dev.remove()
         sdk_ve.commit().wait()
+
+    def _snapshot_ve(self, context, instance, image_id, update_task_state, ve):
+        def upload(context, image_service, image_id, metadata, f):
+            LOG.info("Start uploading image %s ..." % image_id)
+            image_service.update(context, image_id, metadata, f)
+            LOG.info("Image %s uploading complete." % image_id)
+
+        _image_service = glance.get_remote_image_service(context, image_id)
+        snapshot_image_service, snapshot_image_id = _image_service
+        snapshot = snapshot_image_service.show(context, snapshot_image_id)
+        disk_format = CONF.pcs_snapshot_disk_format
+
+        metadata = {'is_public': False,
+                    'status': 'active',
+                    'name': snapshot['name'],
+                    'container_format': 'bare',
+                    'disk_format': disk_format,
+        }
+
+        props = {}
+        metadata['properties'] = props
+
+        if ve.get_vm_type() == pc.PVT_VM:
+            props['vm_mode'] = 'hvm'
+        else:
+            props['vm_mode'] = 'exe'
+
+        update_task_state(task_state=task_states.IMAGE_UPLOADING,
+                    expected_state=task_states.IMAGE_PENDING_UPLOAD)
+
+        hdd = pcsutils.get_boot_disk(ve)
+        hdd_path = hdd.get_image_path()
+
+        props['pcs_ostemplate'] = ve.get_os_template()
+        if disk_format == 'ploop':
+            xml_path = os.path.join(hdd_path, "DiskDescriptor.xml")
+            cmd = ['ploop', 'snapshot-list', '-H', '-o', 'fname', xml_path]
+            out, err = utils.execute(*cmd, run_as_root=True)
+            image_path = out.strip()
+
+            with open(xml_path) as f:
+                props['pcs_disk_descriptor'] = f.read().replace('\n', '')
+
+            with open(image_path) as f:
+                upload(context, snapshot_image_service, image_id, metadata, f)
+        elif disk_format == 'cploop':
+            uploader = pcsutils.CPloopUploader(hdd_path)
+            f = uploader.start()
+            try:
+                upload(context, snapshot_image_service, image_id, metadata, f)
+            finally:
+                uploader.wait()
+        else:
+            dst = tempfile.mktemp(dir=os.path.dirname(hdd_path))
+            LOG.info("Convert image %s to %s format ..." % \
+                     (image_id, disk_format))
+            pcsutils.convert_image(hdd_path, dst, disk_format,
+                                   root_helper=utils.get_root_helper())
+            with open(dst) as f:
+                upload(context, snapshot_image_service, image_id, metadata, f)
+            os.unlink(dst)
+
+    def snapshot(self, context, instance, image_id, update_task_state):
+        LOG.info("snapshot %s" % instance['name'])
+        sdk_ve = self._get_ve_by_name(instance['name'])
+
+        update_task_state(task_state=task_states.IMAGE_PENDING_UPLOAD)
+
+        tmpl_ve_name = "tmpl-" + image_id
+        tmpl_ve = sdk_ve.clone_ex(tmpl_ve_name, CONF.pcs_snapshot_dir,
+                pc.PCVF_CLONE_TO_TEMPLATE).wait().get_param()
+
+        ve_dir = tmpl_ve.get_home_path()
+        if tmpl_ve.get_vm_type() == pc.PVT_VM:
+            # for containers get_home_path returns path
+            # to private area, but for VMs - path to VM
+            # config file.
+            ve_dir = os.path.dirname(ve_dir)
+
+        utils.execute('chown', '-R', 'nova:nova', ve_dir, run_as_root=True)
+        try:
+            self._snapshot_ve(context, instance, image_id,
+                              update_task_state, tmpl_ve)
+        finally:
+            tmpl_ve.delete().wait()
 
     def set_admin_password(self, context, instance_id, new_pass=None):
         LOG.info("set_admin_password %s %s" % (instance_id, new_pass))
