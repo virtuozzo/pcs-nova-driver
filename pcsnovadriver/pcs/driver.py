@@ -346,57 +346,6 @@ class PCSDriver(driver.ComputeDriver):
                 dev.remove()
         sdk_ve.commit().wait()
 
-    def snapshot(self, context, instance, image_id, update_task_state):
-        LOG.info("snapshot %s" % instance['name'])
-
-        sdk_ve = self._get_ve_by_name(instance['name'])
-
-        update_task_state(task_state=task_states.IMAGE_PENDING_UPLOAD)
-
-        tmpl_ve = sdk_ve.clone_ex("tmpl-" + image_id, '',
-                pc.PCVF_CLONE_TO_TEMPLATE).wait().get_param()
-
-        self._reset_network(tmpl_ve)
-
-        try:
-            _image_service = glance.get_remote_image_service(context, image_id)
-            snapshot_image_service, snapshot_image_id = _image_service
-            snapshot = snapshot_image_service.show(context, snapshot_image_id)
-            LOG.info("snapshot=%r" % snapshot)
-
-            metadata = {'is_public': False,
-                        'status': 'active',
-                        'name': snapshot['name'],
-                        'container_format': 'bare',
-            }
-
-            if tmpl_ve.get_vm_type() == pc.PVT_VM:
-                metadata['disk_format'] = 'ploop-vm'
-            else:
-                metadata['disk_format'] = 'ploop-container'
-
-            update_task_state(task_state=task_states.IMAGE_UPLOADING,
-                        expected_state=task_states.IMAGE_PENDING_UPLOAD)
-
-            ve_dir = tmpl_ve.get_home_path()
-            if tmpl_ve.get_vm_type() == pc.PVT_VM:
-                # for containers get_home_path returns path
-                # to private area, but for VMs - path to VM
-                # config file.
-                ve_dir = os.path.dirname(ve_dir)
-
-            args = shlex.split(utils.get_root_helper()) + \
-                    ['tar', 'cO', '-C', ve_dir, '.']
-            LOG.info("Running tar: %r" % args)
-            p = subprocess.Popen(args, stdout = subprocess.PIPE)
-            snapshot_image_service.update(context, image_id, metadata, p.stdout)
-            ret = p.wait()
-            if ret:
-                raise Exception("tar returned %d" % ret)
-            LOG.info(_("Snapshot image upload complete"), instance=instance)
-        finally:
-            tmpl_ve.delete().wait()
-
     def set_admin_password(self, context, instance_id, new_pass=None):
         LOG.info("set_admin_password %s %s" % (instance_id, new_pass))
         sdk_ve = self._get_ve_by_name(instance_id)
