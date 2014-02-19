@@ -90,6 +90,26 @@ PCS_POWER_STATE = {
     pc.VMS_SUSPENDING_SYNC:      power_state.NOSTATE,
 }
 
+PCS_STATE_NAMES = {
+    pc.VMS_COMPACTING:           'COMPACTING',
+    pc.VMS_CONTINUING:           'CONTINUING',
+    pc.VMS_DELETING_STATE:       'DELETING_STATE',
+    pc.VMS_MIGRATING:            'MIGRATING',
+    pc.VMS_PAUSED:               'PAUSED',
+    pc.VMS_PAUSING:              'PAUSING',
+    pc.VMS_RESETTING:            'RESETTING',
+    pc.VMS_RESTORING:            'RESTORING',
+    pc.VMS_RESUMING:             'RESUMING',
+    pc.VMS_RUNNING:              'RUNNING',
+    pc.VMS_SNAPSHOTING:          'SNAPSHOTING',
+    pc.VMS_STARTING:             'STARTING',
+    pc.VMS_STOPPED:              'STOPPED',
+    pc.VMS_STOPPING:             'STOPPING',
+    pc.VMS_SUSPENDED:            'SUSPENDED',
+    pc.VMS_SUSPENDING:           'SUSPENDING',
+    pc.VMS_SUSPENDING_SYNC:      'SUSPENDING_SYNC',
+}
+
 def get_sdk_errcode(strerr):
     lib_err = getattr(prlsdkapi.prlsdk.errors, strerr)
     return prlsdkapi.conv_error(lib_err)
@@ -166,15 +186,139 @@ class PCSDriver(driver.ComputeDriver):
             raise
         return ve
 
+    def _start(self, sdk_ve):
+        sdk_ve.start().wait()
+
+    def _stop(self, sdk_ve):
+        sdk_ve.stop_ex(pc.PSM_ACPI, pc.PSF_FORCE).wait()
+
+    def _suspend(self, sdk_ve):
+        sdk_ve.suspend().wait()
+
+    def _resume(self, sdk_ve):
+        sdk_ve.resume().wait()
+
+    def _pause(self, sdk_ve):
+        sdk_ve.pause().wait()
+
+    def _unpause(self, sdk_ve):
+        sdk_ve.start().wait()
+
+    def _get_state(self, sdk_ve):
+        vm_info = sdk_ve.get_state().wait().get_param()
+        return vm_info.get_state()
+
+    def _wait_intermediate_state(self, sdk_ve):
+        intermediate_states = [
+            pc.VMS_COMPACTING,
+            pc.VMS_CONTINUING,
+            pc.VMS_DELETING_STATE,
+            pc.VMS_MIGRATING,
+            pc.VMS_PAUSING,
+            pc.VMS_RESETTING,
+            pc.VMS_RESTORING,
+            pc.VMS_RESUMING,
+            pc.VMS_SNAPSHOTING,
+            pc.VMS_STARTING,
+            pc.VMS_STOPPING,
+            pc.VMS_SUSPENDING,
+            pc.VMS_SUSPENDING_SYNC,
+            ]
+
+        while True:
+            state = self._get_state(sdk_ve)
+            if state not in intermediate_states:
+                break
+            LOG.info('VE "%s" is in %s state, waiting' % \
+                     (sdk_ve.get_name(), PCS_STATE_NAMES[state]))
+            time.sleep(1)
+
+    def _set_started_state(self, sdk_ve):
+        self._wait_intermediate_state(sdk_ve)
+        state = self._get_state(sdk_ve)
+        LOG.info("Switch VE to RUNNING state, current is %s" % \
+                                        PCS_STATE_NAMES[state])
+        if state == pc.VMS_STOPPED:
+            self._start(sdk_ve)
+        elif state == pc.VMS_SUSPENDED:
+            self._resume(sdk_ve)
+        elif state == pc.VMS_PAUSED:
+            self._unpause(sdk_ve)
+
+    def _set_stopped_state(self, sdk_ve):
+        self._wait_intermediate_state(sdk_ve)
+        state = self._get_state(sdk_ve)
+        LOG.info("Switch VE to STOPPED state, current is %s" % \
+                                        PCS_STATE_NAMES[state])
+        if state == pc.VMS_RUNNING:
+            self._stop(sdk_ve)
+        elif state == pc.VMS_SUSPENDED:
+            self._resume(sdk_ve)
+            self._stop(sdk_ve)
+        elif state == pc.VMS_PAUSED:
+            self._unpause(sdk_ve)
+            self._stop(sdk_ve)
+
+    def _set_paused_state(self, sdk_ve):
+        self._wait_intermediate_state(sdk_ve)
+        state = self._get_state(sdk_ve)
+        LOG.info("Switch VE to PAUSED state, current is %s" % \
+                                        PCS_STATE_NAMES[state])
+        if state == pc.VMS_RUNNING:
+            self._pause(sdk_ve)
+        elif state == pc.VMS_SUSPENDED:
+            self._resume(sdk_ve)
+            self._pause(sdk_ve)
+        elif state == pc.VMS_STOPPED:
+            self._start(sdk_ve)
+            self._pause(sdk_ve)
+
+    def _set_suspended_state(self, sdk_ve):
+        self._wait_intermediate_state(sdk_ve)
+        state = self._get_state(sdk_ve)
+        LOG.info("Switch VE to SUSPENDED state, current is %s" % \
+                                        PCS_STATE_NAMES[state])
+        if state == pc.VMS_RUNNING:
+            self._suspend(sdk_ve)
+        elif state == pc.VMS_PAUSED:
+            self._unpause(sdk_ve)
+            self._suspend(sdk_ve)
+        elif state == pc.VMS_STOPPED:
+            self._stop(sdk_ve)
+            self._suspend(sdk_ve)
+
+    def _sync_ve_state(self, sdk_ve, instance):
+        req_state = instance['power_state']
+        if req_state == power_state.NOSTATE:
+            return
+        if req_state == power_state.RUNNING:
+            self._set_started_state(sdk_ve)
+        elif req_state == power_state.PAUSED:
+            self._set_paused_state(sdk_ve)
+        elif req_state == power_state.SHUTDOWN:
+            self._set_stopped_state(sdk_ve)
+        elif req_state == power_state.CRASHED:
+            self._set_stopped_state(sdk_ve)
+        elif req_state == power_state.SUSPENDED:
+            self._set_suspended_state(sdk_ve)
+
     def _plug_vifs(self, instance, sdk_ve, network_info):
         for vif in network_info:
             self.vif_driver.plug(self, instance, sdk_ve, vif)
 
     def plug_vifs(self, instance, network_info):
+        stopped_states = [power_state.NOSTATE,
+                          power_state.SHUTDOWN,
+                          power_state.CRASHED,
+                          power_state.SUSPENDED,
+                          ]
         LOG.info("plug_vifs: %s" % instance['name'])
+        if instance['power_state'] in stopped_states:
+            return
         if not self.instance_exists(instance['name']):
             return
         sdk_ve = self._get_ve_by_name(instance['name'])
+        self._sync_ve_state(sdk_ve, instance)
         self._plug_vifs(instance, sdk_ve, network_info)
 
     def _unplug_vifs(self, instance, sdk_ve, network_info):
