@@ -62,6 +62,12 @@ pcs_opts = [
     cfg.StrOpt('pcs_snapshot_dir',
                 default = '/vz/openstack-snapshots',
                 help = 'Directory for snapshot operation.'),
+
+    cfg.StrOpt('pcs_volume_drivers',
+                default = [
+                    'local=pcsnovadriver.pcs.volume.PCSLocalVolumeDriver',
+                ],
+                help = 'PCS handlers for remote volumes.'),
     ]
 
 CONF = cfg.CONF
@@ -140,6 +146,8 @@ class PCSDriver(driver.ComputeDriver):
             raise NotImplementedError(firewall_msg)
         self.vif_driver = PCSVIFDriver()
         self.image_cache_manager = imagecache.ImageCacheManager()
+        self.volume_drivers = driver.driver_dict_from_config(
+                                CONF.pcs_volume_drivers, self)
 
     @property
     def host_state(self):
@@ -383,6 +391,17 @@ class PCSDriver(driver.ComputeDriver):
         self._reset_network(sdk_ve)
         for vif in network_info:
             self.vif_driver.setup_dev(self, instance, sdk_ve, vif)
+
+        block_device_mapping = driver.block_device_info_get_mapping(
+            block_device_info)
+
+        for vol in block_device_mapping:
+            connection_info = vol['connection_info']
+            disk_info = {
+                'mount_device': vol['mount_device']}
+            self.volume_driver_method('connect_volume',
+                                connection_info, sdk_ve, disk_info)
+
         sdk_ve.start_ex(pc.PSM_VM_START, pc.PNSF_VM_START_WAIT).wait()
 
         self._plug_vifs(instance, sdk_ve, network_info)
@@ -593,6 +612,21 @@ class PCSDriver(driver.ComputeDriver):
     def manage_image_cache(self, context, all_instances):
         LOG.info("manage_image_cache")
         self.image_cache_manager.update(context, all_instances)
+
+    def volume_driver_method(self, method_name, connection_info,
+                             *args, **kwargs):
+        driver_type = connection_info.get('driver_volume_type')
+        if driver_type not in self.volume_drivers:
+            raise exception.VolumeDriverNotFound(driver_type=driver_type)
+        driver = self.volume_drivers[driver_type]
+        method = getattr(driver, method_name)
+        return method(connection_info, *args, **kwargs)
+
+    def get_volume_connector(self, instance):
+        connector = {'ip': CONF.my_ip,
+                     'host': CONF.host,
+                     'initiator': '_not_implemented'}
+        return connector
 
 class HostState(object):
     def __init__(self, driver):
