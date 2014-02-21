@@ -57,7 +57,22 @@ class PCSBaseVolumeDriver(object):
         hdd.set_sys_name(host_device)
         sdk_ve.commit().wait()
 
+    def _detach_blockdev(self, sdk_ve, host_device, guest_device):
+        sdk_ve.begin_edit().wait()
+        n = sdk_ve.get_devs_count_by_type(pc.PDE_HARD_DISK)
+        for i in xrange(n):
+            dev = sdk_ve.get_dev_by_type(pc.PDE_HARD_DISK, i)
+            if dev.get_friendly_name() == guest_device:
+                dev.remove()
+                break
+        else:
+            raise Exception("Can't find device %s" % guest_device)
+        sdk_ve.commit().wait()
+
     def connect_volume(self, connection_info, sdk_ve, disk_info):
+        raise NotImplementedError()
+
+    def disconnect_volume(self, connection_info, sdk_ve, disk_info):
         raise NotImplementedError()
 
 class PCSLocalVolumeDriver(PCSBaseVolumeDriver):
@@ -65,6 +80,10 @@ class PCSLocalVolumeDriver(PCSBaseVolumeDriver):
     def connect_volume(self, connection_info, sdk_ve, disk_info):
         data = connection_info['data']
         self._attach_blockdev(sdk_ve, data['device_path'], disk_info['dev'])
+
+    def disconnect_volume(self, connection_info, sdk_ve, disk_info):
+        data = connection_info['data']
+        self._detach_blockdev(sdk_ve, data['device_path'], disk_info['dev'])
 
 class PCSISCSIVolumeDriver(PCSBaseVolumeDriver):
 

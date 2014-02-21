@@ -425,6 +425,18 @@ class PCSDriver(driver.ComputeDriver):
         # TODO: handle all possible states
         if state == pc.VMS_RUNNING:
             sdk_ve.stop_ex(pc.PSM_KILL, pc.PSF_FORCE).wait()
+
+        block_device_mapping = driver.block_device_info_get_mapping(
+            block_device_info)
+
+        for vol in block_device_mapping:
+            connection_info = vol['connection_info']
+            disk_info = {
+                'dev': vol['mount_device'],
+                'mount_device': vol['mount_device']}
+            self.volume_driver_method('disconnect_volume',
+                                connection_info, sdk_ve, disk_info)
+
         sdk_ve.delete().wait()
 
     def get_info(self, instance):
