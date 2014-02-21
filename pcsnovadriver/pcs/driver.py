@@ -66,6 +66,7 @@ pcs_opts = [
     cfg.StrOpt('pcs_volume_drivers',
                 default = [
                     'local=pcsnovadriver.pcs.volume.PCSLocalVolumeDriver',
+                    'iscsi=pcsnovadriver.pcs.volume.PCSISCSIVolumeDriver'
                 ],
                 help = 'PCS handlers for remote volumes.'),
     ]
@@ -398,6 +399,7 @@ class PCSDriver(driver.ComputeDriver):
         for vol in block_device_mapping:
             connection_info = vol['connection_info']
             disk_info = {
+                'dev': vol['mount_device'],
                 'mount_device': vol['mount_device']}
             self.volume_driver_method('connect_volume',
                                 connection_info, sdk_ve, disk_info)
