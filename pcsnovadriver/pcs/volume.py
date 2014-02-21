@@ -45,7 +45,7 @@ class PCSBaseVolumeDriver(object):
         LOG.info("%s.__init__" % self.__class__.__name__)
         self.driver = driver
 
-    def _attach_blockdev(self, sdk_ve, device):
+    def _attach_blockdev(self, sdk_ve, host_device, guest_device):
         #TODO: handle QOS specifications
         #TODO: handle RW mode
         #TODO: handle device name inside VE
@@ -53,8 +53,8 @@ class PCSBaseVolumeDriver(object):
         sdk_ve.begin_edit().wait()
         hdd = sdk_ve.add_default_device_ex(srv_cfg, pc.PDE_HARD_DISK)
         hdd.set_emulated_type(pc.PDT_USE_REAL_HDD)
-        hdd.set_friendly_name(device.replace('/', '_'))
-        hdd.set_sys_name(device)
+        hdd.set_friendly_name(guest_device)
+        hdd.set_sys_name(host_device)
         sdk_ve.commit().wait()
 
     def connect_volume(self, connection_info, sdk_ve, disk_info):
@@ -64,7 +64,7 @@ class PCSLocalVolumeDriver(PCSBaseVolumeDriver):
 
     def connect_volume(self, connection_info, sdk_ve, disk_info):
         data = connection_info['data']
-        self._attach_blockdev(sdk_ve, data['device_path'])
+        self._attach_blockdev(sdk_ve, data['device_path'], disk_info['dev'])
 
 class PCSISCSIVolumeDriver(PCSBaseVolumeDriver):
 
@@ -156,7 +156,7 @@ class PCSISCSIVolumeDriver(PCSBaseVolumeDriver):
             if multipath_device is not None:
                 host_device = multipath_device
 
-        self._attach_blockdev(sdk_ve, host_device)
+        self._attach_blockdev(sdk_ve, host_device, disk_info['dev'])
 
     def _connect_to_iscsi_portal(self, iscsi_properties):
         # NOTE(vish): If we are on the same host as nova volume, the
