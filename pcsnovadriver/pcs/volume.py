@@ -62,7 +62,8 @@ class PCSBaseVolumeDriver(object):
         n = sdk_ve.get_devs_count_by_type(pc.PDE_HARD_DISK)
         for i in xrange(n):
             dev = sdk_ve.get_dev_by_type(pc.PDE_HARD_DISK, i)
-            if dev.get_friendly_name() == guest_device:
+            if self.driver.get_disk_dev_path(dev) == host_device:
+                LOG.info("Removing device %s" % dev.get_friendly_name())
                 dev.remove()
                 break
         else:
