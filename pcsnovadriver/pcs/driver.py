@@ -463,6 +463,10 @@ class PCSDriver(driver.ComputeDriver):
         LOG.info("get_available_resource")
         return self.host_state.get_host_stats(refresh=True)
 
+    @staticmethod
+    def get_host_ip_addr():
+        return CONF.my_ip
+
     def reboot(self, context, instance, network_info, reboot_type='SOFT',
             block_device_info=None, bad_volumes_callback=None):
         LOG.info("reboot %s" % instance['name'])
