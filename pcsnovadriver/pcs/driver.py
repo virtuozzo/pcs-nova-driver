@@ -198,8 +198,11 @@ class PCSDriver(driver.ComputeDriver):
     def _start(self, sdk_ve):
         sdk_ve.start().wait()
 
-    def _stop(self, sdk_ve):
-        sdk_ve.stop_ex(pc.PSM_ACPI, pc.PSF_FORCE).wait()
+    def _stop(self, sdk_ve, kill=False):
+        if kill:
+            sdk_ve.stop_ex(pc.PSM_KILL, pc.PSF_FORCE).wait()
+        else:
+            sdk_ve.stop_ex(pc.PSM_ACPI, pc.PSF_FORCE).wait()
 
     def _suspend(self, sdk_ve):
         sdk_ve.suspend().wait()
@@ -254,19 +257,19 @@ class PCSDriver(driver.ComputeDriver):
         elif state == pc.VMS_PAUSED:
             self._unpause(sdk_ve)
 
-    def _set_stopped_state(self, sdk_ve):
+    def _set_stopped_state(self, sdk_ve, kill):
         self._wait_intermediate_state(sdk_ve)
         state = self._get_state(sdk_ve)
         LOG.info("Switch VE to STOPPED state, current is %s" % \
                                         PCS_STATE_NAMES[state])
         if state == pc.VMS_RUNNING:
-            self._stop(sdk_ve)
+            self._stop(sdk_ve, kill)
         elif state == pc.VMS_SUSPENDED:
             self._resume(sdk_ve)
-            self._stop(sdk_ve)
+            self._stop(sdk_ve, kill)
         elif state == pc.VMS_PAUSED:
             self._unpause(sdk_ve)
-            self._stop(sdk_ve)
+            self._stop(sdk_ve, kill)
 
     def _set_paused_state(self, sdk_ve):
         self._wait_intermediate_state(sdk_ve)
