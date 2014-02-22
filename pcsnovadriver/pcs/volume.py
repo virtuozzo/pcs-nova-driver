@@ -59,6 +59,7 @@ class PCSBaseVolumeDriver(object):
         hdd.set_friendly_name(guest_device)
         hdd.set_sys_name(host_device)
         sdk_ve.commit().wait()
+        return hdd
 
     def _detach_blockdev(self, sdk_ve, host_device, guest_device):
         sdk_ve.begin_edit().wait()
@@ -83,7 +84,8 @@ class PCSLocalVolumeDriver(PCSBaseVolumeDriver):
 
     def connect_volume(self, connection_info, sdk_ve, disk_info):
         data = connection_info['data']
-        self._attach_blockdev(sdk_ve, data['device_path'], disk_info['dev'])
+        return self._attach_blockdev(sdk_ve,
+                data['device_path'], disk_info['dev'])
 
     def disconnect_volume(self, connection_info, sdk_ve, disk_info):
         data = connection_info['data']
@@ -179,7 +181,7 @@ class PCSISCSIVolumeDriver(PCSBaseVolumeDriver):
             if multipath_device is not None:
                 host_device = multipath_device
 
-        self._attach_blockdev(sdk_ve, host_device, disk_info['dev'])
+        return self._attach_blockdev(sdk_ve, host_device, disk_info['dev'])
 
     @utils.synchronized('connect_volume')
     def disconnect_volume(self, connection_info, sdk_ve, disk_info):

@@ -348,7 +348,7 @@ class PCSDriver(driver.ComputeDriver):
             res[d['key']] = d['value']
         return res
 
-    def _apply_flavor(self, instance, sdk_ve):
+    def _apply_flavor(self, instance, sdk_ve, resize_root_disk):
         metadata = self._format_system_metadata(instance)
         sdk_ve.begin_edit().wait()
 
@@ -365,6 +365,9 @@ class PCSDriver(driver.ComputeDriver):
         sdk_ve.commit().wait()
 
         # TODO: tune swap size in VMs
+
+        if not resize_root_disk:
+            return
 
         ndisks = sdk_ve.get_devs_count_by_type(pc.PDE_HARD_DISK)
         if ndisks != 1:
@@ -421,11 +424,15 @@ class PCSDriver(driver.ComputeDriver):
             admin_password, network_info=None, block_device_info=None):
         LOG.info("spawn: %s" % instance['name'])
 
-        tmpl = template.get_template(self, context, instance['image_ref'],
-                        instance['user_id'], instance['project_id'])
-        sdk_ve = tmpl.create_instance(self.psrv, instance)
+        if instance['image_ref']:
+            tmpl = template.get_template(self, context, instance['image_ref'],
+                            instance['user_id'], instance['project_id'])
+            sdk_ve = tmpl.create_instance(self.psrv, instance)
+        else:
+            sdk_ve = self._create_blank_vm(instance)
 
-        self._apply_flavor(instance, sdk_ve)
+        self._apply_flavor(instance, sdk_ve,
+                resize_root_disk=bool(instance['image_ref']))
         self._reset_network(sdk_ve)
         for vif in network_info:
             self.vif_driver.setup_dev(self, instance, sdk_ve, vif)
@@ -438,8 +445,10 @@ class PCSDriver(driver.ComputeDriver):
             disk_info = {
                 'dev': vol['mount_device'],
                 'mount_device': vol['mount_device']}
-            self.volume_driver_method('connect_volume',
+            hdd = self.volume_driver_method('connect_volume',
                                 connection_info, sdk_ve, disk_info)
+            if instance['root_device_name'] == vol['mount_device']:
+                self._set_boot_device(sdk_ve, hdd)
 
         sdk_ve.start_ex(pc.PSM_VM_START, pc.PNSF_VM_START_WAIT).wait()
 
