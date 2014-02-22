@@ -468,11 +468,13 @@ class PCSDriver(driver.ComputeDriver):
         LOG.info("reboot %s" % instance['name'])
         sdk_ve = self._get_ve_by_name(instance['name'])
 
-        if reboot_type == 'SOFT':
+        if self._get_state(sdk_ve) == pc.VMS_RUNNING \
+                            and reboot_type == 'SOFT':
             sdk_ve.restart().wait()
         else:
-            sdk_ve.stop_ex(pc.PSM_KILL, 0).wait()
-            sdk_ve.start().wait()
+            kill = not (reboot_type == 'SOFT')
+            self._set_stopped_state(sdk_ve, kill)
+            self._set_started_state(sdk_ve)
         self._plug_vifs(instance, sdk_ve, network_info)
 
     def suspend(self, instance):
