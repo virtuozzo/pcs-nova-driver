@@ -31,6 +31,9 @@ from nova import utils
 LOG = logging.getLogger(__name__)
 
 volume_opts = [
+    cfg.IntOpt('num_iscsi_scan_tries',
+                default=3,
+                help='number of times to rescan iSCSI target to find volume'),
     cfg.BoolOpt('pcs_iscsi_use_multipath',
                 default=False,
                 help='use multipath connection of the iSCSI volume'),
