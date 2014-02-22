@@ -483,6 +483,20 @@ class PCSDriver(driver.ComputeDriver):
         sdk_ve.resume().wait()
         self._plug_vifs(instance, sdk_ve, network_info)
 
+    def pause(self, instance):
+        LOG.info("suspend %s" % instance['name'])
+        sdk_ve = self._get_ve_by_name(instance['name'])
+        if sdk_ve.get_vm_type() != pc.PVT_VM:
+            raise NotImplementedError()
+        sdk_ve.pause().wait()
+
+    def unpause(self, instance, network_info, block_device_info=None):
+        LOG.info("resume %s" % instance['name'])
+        sdk_ve = self._get_ve_by_name(instance['name'])
+        if sdk_ve.get_vm_type() != pc.PVT_VM:
+            raise NotImplementedError()
+        sdk_ve.resume().wait()
+
     def power_off(self, instance):
         LOG.info("power_off %s" % instance['name'])
         sdk_ve = self._get_ve_by_name(instance['name'])
