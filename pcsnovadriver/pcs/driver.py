@@ -383,6 +383,40 @@ class PCSDriver(driver.ComputeDriver):
         session.set_user_passwd('root', admin_password, 0).wait()
         session.logout(0)
 
+    def _create_blank_vm(self, instance):
+        # create an empty VM
+        sdk_ve = self.psrv.create_vm()
+        srv_cfg = self.psrv.get_srv_config().wait().get_param()
+        os_ver = getattr(pc, "PVS_GUEST_VER_LIN_REDHAT")
+        sdk_ve.set_default_config(srv_cfg, os_ver, True)
+        sdk_ve.set_uuid('{%s}' % instance['uuid'])
+        sdk_ve.set_name(instance['name'])
+        sdk_ve.set_vm_type(prlsdkapi.consts.PVT_VM)
+
+        # remove unneded devices
+        n = sdk_ve.get_devs_count_by_type(pc.PDE_HARD_DISK)
+        for i in xrange(n):
+            dev = sdk_ve.get_dev_by_type(pc.PDE_HARD_DISK, i)
+            dev.remove()
+
+        n = sdk_ve.get_devs_count_by_type(pc.PDE_GENERIC_NETWORK_ADAPTER)
+        for i in xrange(n):
+            dev = sdk_ve.get_dev_by_type(pc.PDE_GENERIC_NETWORK_ADAPTER, i)
+            dev.remove()
+
+        sdk_ve.reg('', True).wait()
+
+        return sdk_ve
+
+    def _set_boot_device(self, sdk_ve, hdd):
+        sdk_ve.begin_edit().wait()
+        b = sdk_ve.create_boot_dev()
+        b.set_type(pc.PDE_HARD_DISK)
+        b.set_index(hdd.get_index())
+        b.set_sequence_index(0)
+        b.set_in_use(1)
+        sdk_ve.commit().wait()
+
     def spawn(self, context, instance, image_meta, injected_files,
             admin_password, network_info=None, block_device_info=None):
         LOG.info("spawn: %s" % instance['name'])

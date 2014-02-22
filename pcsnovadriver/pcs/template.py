@@ -230,27 +230,7 @@ class DiskCacheTemplate(PCSTemplate):
         return sdk_ve
 
     def _create_vm(self, psrv, instance):
-        # create an empty VM
-        sdk_ve = psrv.create_vm()
-        srv_cfg = psrv.get_srv_config().wait().get_param()
-        os_ver = getattr(pc, "PVS_GUEST_VER_LIN_REDHAT")
-        sdk_ve.set_default_config(srv_cfg, os_ver, True)
-        sdk_ve.set_uuid('{%s}' % instance['uuid'])
-        sdk_ve.set_name(instance['name'])
-        sdk_ve.set_vm_type(prlsdkapi.consts.PVT_VM)
-
-        # remove unneded devices
-        n = sdk_ve.get_devs_count_by_type(pc.PDE_HARD_DISK)
-        for i in xrange(n):
-            dev = sdk_ve.get_dev_by_type(pc.PDE_HARD_DISK, i)
-            dev.remove()
-
-        n = sdk_ve.get_devs_count_by_type(pc.PDE_GENERIC_NETWORK_ADAPTER)
-        for i in xrange(n):
-            dev = sdk_ve.get_dev_by_type(pc.PDE_GENERIC_NETWORK_ADAPTER, i)
-            dev.remove()
-
-        sdk_ve.reg('', True).wait()
+        sdk_ve = self.driver._create_blank_vm(instance)
 
         # copy hard disk to VM directory
         ve_path = os.path.dirname(sdk_ve.get_home_path())
@@ -258,6 +238,7 @@ class DiskCacheTemplate(PCSTemplate):
         self._put_image(disk_path)
 
         # add hard disk to VM config and set is as boot device
+        srv_cfg = psrv.get_srv_config().wait().get_param()
         sdk_ve.begin_edit().wait()
 
         hdd = sdk_ve.add_default_device_ex(srv_cfg, pc.PDE_HARD_DISK)
