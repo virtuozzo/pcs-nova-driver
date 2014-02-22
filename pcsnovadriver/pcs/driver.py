@@ -642,6 +642,24 @@ class PCSDriver(driver.ComputeDriver):
                      'initiator': '_not_implemented'}
         return connector
 
+    def get_disk_dev_path(self, hdd):
+        #FIXME: add snapshots support
+        xml_path = os.path.join(hdd.get_sys_name(), "DiskDescriptor.xml")
+        cmd = ['ploop', 'snapshot-list', '-H', '-o', 'fname', xml_path]
+        out, err = utils.execute(*cmd, run_as_root=True)
+        return out.strip()
+
+    def get_used_block_devices(self):
+        ves = self.psrv.get_vm_list_ex(nFlags=pc.PVTF_VM).wait()
+        devices = []
+        for sdk_ve in ves:
+            n = sdk_ve.get_devs_count_by_type(pc.PDE_HARD_DISK)
+            for i in xrange(n):
+                dev = sdk_ve.get_dev_by_type(pc.PDE_HARD_DISK, i)
+                if dev.get_emulated_type() == pc.PDT_USE_REAL_HDD:
+                    devices.append(self.get_disk_dev_path(dev))
+        return devices
+
 class HostState(object):
     def __init__(self, driver):
         super(HostState, self).__init__()
