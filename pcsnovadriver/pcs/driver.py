@@ -129,6 +129,19 @@ firewall_driver=pcsnovadriver.neutron.pcs_firewall.PCSIptablesFirewallDriver
 in [SECURITYGROUP] section.
 """
 
+def get_iscsi_initiator():
+    """Get iscsi initiator name for this machine."""
+    # NOTE(vish) openiscsi stores initiator name in a file that
+    #            needs root permission to read.
+    try:
+        contents = utils.read_file_as_root('/etc/iscsi/initiatorname.iscsi')
+    except exception.FileNotFound:
+        return None
+
+    for l in contents.split('\n'):
+        if l.startswith('InitiatorName='):
+            return l[l.index('=') + 1:].strip()
+
 class PCSDriver(driver.ComputeDriver):
 
     capabilities = {
@@ -142,6 +155,7 @@ class PCSDriver(driver.ComputeDriver):
 
         self.host = None
         self._host_state = None
+        self._initiator = None
 
         if CONF.firewall_driver != "nova.virt.firewall.NoopFirewallDriver":
             raise NotImplementedError(firewall_msg)
@@ -164,6 +178,7 @@ class PCSDriver(driver.ComputeDriver):
         prlsdkapi.init_server_sdk()
         self.psrv = prlsdkapi.Server()
         self.psrv.login('localhost', CONF.pcs_login, CONF.pcs_password).wait()
+        self
 
     def list_instances(self):
         LOG.info("list_instances")
@@ -703,9 +718,18 @@ class PCSDriver(driver.ComputeDriver):
         return method(connection_info, *args, **kwargs)
 
     def get_volume_connector(self, instance):
+        if not self._initiator:
+            self._initiator = get_iscsi_initiator()
+            if not self._initiator:
+                LOG.debug(_('Could not determine iscsi initiator name'),
+                          instance=instance)
+
         connector = {'ip': CONF.my_ip,
-                     'host': CONF.host,
-                     'initiator': '_not_implemented'}
+                     'host': CONF.host}
+
+        if self._initiator:
+            connector['initiator'] = self._initiator
+
         return connector
 
     def get_disk_dev_path(self, hdd):
