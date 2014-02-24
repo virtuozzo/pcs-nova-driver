@@ -105,7 +105,7 @@ class PCSBaseVolumeDriver(object):
             dev = sdk_ve.get_dev_by_type(pc.PDE_HARD_DISK, i)
             if dev.get_emulated_type() != pc.PDT_USE_IMAGE_FILE:
                 continue
-            if self.driver.get_image_path(dev) == image:
+            if dev.get_image_path() == image:
                 LOG.info("Removing device %s" % dev.get_friendly_name())
                 dev.remove()
                 break
