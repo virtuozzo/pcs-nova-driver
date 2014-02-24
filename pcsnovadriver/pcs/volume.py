@@ -426,9 +426,6 @@ class PCSPStorageVolumeDriver(PCSBaseVolumeDriver):
                 mounts[mnt_point] = device
         return mounts
 
-    def _write_file_as_root(self, path):
-        cmd = shlex.split(root_helper) + ['cat', 'mount', dd_path]
-
     def _get_mount_point(self, data):
         return os.path.join(CONF.pstorage_mount_point_base,
                             data['cluster_name'])
