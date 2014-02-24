@@ -16,6 +16,7 @@
 #    under the License.
 
 import os
+import tempfile
 
 from oslo.config import cfg
 
@@ -37,6 +38,10 @@ volume_opts = [
     cfg.BoolOpt('pcs_iscsi_use_multipath',
                 default=False,
                 help='use multipath connection of the iSCSI volume'),
+
+   cfg.StrOpt('pstorage_mount_point_base',
+               default='/pstorage/nova-compute',
+               help='Base directory for PStorage mounts.'),
     ]
 
 CONF = cfg.CONF
@@ -66,7 +71,36 @@ class PCSBaseVolumeDriver(object):
         n = sdk_ve.get_devs_count_by_type(pc.PDE_HARD_DISK)
         for i in xrange(n):
             dev = sdk_ve.get_dev_by_type(pc.PDE_HARD_DISK, i)
+            if dev.get_emulated_type() != pc.PDT_USE_REAL_HDD:
+                continue
             if self.driver.get_disk_dev_path(dev) == host_device:
+                LOG.info("Removing device %s" % dev.get_friendly_name())
+                dev.remove()
+                break
+        else:
+            raise Exception("Can't find device %s" % guest_device)
+        sdk_ve.commit().wait()
+
+    def _attach_image(self, sdk_ve, image):
+        #TODO: handle QOS specifications
+        #TODO: handle RW mode
+        #TODO: handle device name inside VE
+        srv_cfg = self.driver.psrv.get_srv_config().wait().get_param()
+        sdk_ve.begin_edit().wait()
+        hdd = sdk_ve.add_default_device_ex(srv_cfg, pc.PDE_HARD_DISK)
+        hdd.set_emulated_type(pc.PDT_USE_IMAGE_FILE)
+        hdd.set_image_path(image)
+        sdk_ve.commit().wait()
+        return hdd
+
+    def _detach_image(self, sdk_ve, image):
+        sdk_ve.begin_edit().wait()
+        n = sdk_ve.get_devs_count_by_type(pc.PDE_HARD_DISK)
+        for i in xrange(n):
+            dev = sdk_ve.get_dev_by_type(pc.PDE_HARD_DISK, i)
+            if dev.get_emulated_type() != pc.PDT_USE_IMAGE_FILE:
+                continue
+            if self.driver.get_image_path(dev) == image:
                 LOG.info("Removing device %s" % dev.get_friendly_name())
                 dev.remove()
                 break
@@ -378,3 +412,70 @@ class PCSISCSIVolumeDriver(PCSBaseVolumeDriver):
     def _rescan_multipath(self):
         self._run_multipath('-r', check_exit_code=[0, 1, 21])
 
+class PCSPStorageVolumeDriver(PCSBaseVolumeDriver):
+
+    def _read_mounts(self):
+        (out, err) = utils.execute('mount', run_as_root=True)
+        lines = out.splitlines()
+        mounts = {}
+        for line in lines:
+            tokens = line.split()
+            if len(tokens) > 2:
+                device = tokens[0]
+                mnt_point = tokens[2]
+                mounts[mnt_point] = device
+        return mounts
+
+    def _write_file_as_root(self, path):
+        cmd = shlex.split(root_helper) + ['cat', 'mount', dd_path]
+
+    def _get_mount_point(self, data):
+        return os.path.join(CONF.pstorage_mount_point_base,
+                            data['cluster_name'])
+
+    def _update_mds_list(self, data):
+        mds_list_path = os.path.join('/etc/pstorage/clusters',
+                            data['cluster_name'], 'bs.list')
+        mds_list = utils.read_file_as_root(mds_list_path).splitlines()
+        if set(mds_list) != set(data['mds_list']):
+            LOG.info("Updating MDS list ...")
+            fd, name = tempfile.mkstemp()
+            f = os.fdopen(fd)
+            f.write('\n'.join(data['mds_list']))
+            f.close()
+            utils.execute('cp', '-f', name, mds_list_path)
+            os.unlink(name)
+
+    def _mount_pstorage(self, data):
+        self._update_mds_list(data)
+
+        mp = self._get_mount_point(data)
+        try:
+            utils.execute('stat', mp, run_as_root=True)
+        except:
+            utils.execute('mkdir', '-p', mp, run_as_root=True)
+        utils.execute('pstorage-mount', '-c', data['cluster_name'],
+                        mp, run_as_root=True)
+
+    def _ensure_mounted(self, data):
+        dev = "pstorage://%s" % data['cluster_name']
+        mp = self._get_mount_point(data)
+        mounts = self._read_mounts()
+        if mp not in mounts:
+            self._mount_pstorage(data)
+            return
+        if mounts[mp] != dev:
+            raise Exception("%s already mounted to %s" % (mounts[mp], mp))
+
+    def connect_volume(self, connection_info, sdk_ve, disk_info):
+        data = connection_info['data']
+        self._ensure_mounted(data)
+        mp = self._get_mount_point(data)
+        return self._attach_image(sdk_ve,
+                os.path.join(mp, data['volume_name']))
+
+    def disconnect_volume(self, connection_info, sdk_ve, disk_info):
+        data = connection_info['data']
+        mp = self._get_mount_point(data)
+        vol_path = os.path.join(mp, data['volume_name'])
+        self._detach_image(sdk_ve, vol_path)

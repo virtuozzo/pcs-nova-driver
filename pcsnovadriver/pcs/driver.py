@@ -66,7 +66,8 @@ pcs_opts = [
     cfg.StrOpt('pcs_volume_drivers',
                 default = [
                     'local=pcsnovadriver.pcs.volume.PCSLocalVolumeDriver',
-                    'iscsi=pcsnovadriver.pcs.volume.PCSISCSIVolumeDriver'
+                    'iscsi=pcsnovadriver.pcs.volume.PCSISCSIVolumeDriver',
+                    'pstorage=pcsnovadriver.pcs.volume.PCSPStorageVolumeDriver',
                 ],
                 help = 'PCS handlers for remote volumes.'),
     ]
