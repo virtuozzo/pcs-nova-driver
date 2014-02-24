@@ -66,7 +66,8 @@ class PCSBaseVolumeDriver(object):
         sdk_ve.commit().wait()
         return hdd
 
-    def _detach_blockdev(self, sdk_ve, host_device, guest_device):
+    def _detach_blockdev(self, sdk_ve, host_device,
+                         guest_device, ignore_errors):
         sdk_ve.begin_edit().wait()
         n = sdk_ve.get_devs_count_by_type(pc.PDE_HARD_DISK)
         for i in xrange(n):
@@ -78,7 +79,11 @@ class PCSBaseVolumeDriver(object):
                 dev.remove()
                 break
         else:
-            raise Exception("Can't find device %s" % guest_device)
+            msg = "Can't find device %s" % guest_device
+            if ignore_errors:
+                LOG.error(msg)
+            else:
+                raise Exception(msg)
         sdk_ve.commit().wait()
 
     def _attach_image(self, sdk_ve, image):
@@ -93,7 +98,7 @@ class PCSBaseVolumeDriver(object):
         sdk_ve.commit().wait()
         return hdd
 
-    def _detach_image(self, sdk_ve, image):
+    def _detach_image(self, sdk_ve, image, ignore_errors):
         sdk_ve.begin_edit().wait()
         n = sdk_ve.get_devs_count_by_type(pc.PDE_HARD_DISK)
         for i in xrange(n):
@@ -105,7 +110,11 @@ class PCSBaseVolumeDriver(object):
                 dev.remove()
                 break
         else:
-            raise Exception("Can't find device %s" % guest_device)
+            msg = "Can't find device with image %s" % image
+            if ignore_errors:
+                LOG.error(msg)
+            else:
+                raise Exception(msg)
         sdk_ve.commit().wait()
 
     def connect_volume(self, connection_info, sdk_ve, disk_info):
@@ -121,9 +130,11 @@ class PCSLocalVolumeDriver(PCSBaseVolumeDriver):
         return self._attach_blockdev(sdk_ve,
                 data['device_path'], disk_info['dev'])
 
-    def disconnect_volume(self, connection_info, sdk_ve, disk_info):
+    def disconnect_volume(self, connection_info, sdk_ve,
+                          disk_info, ignore_errors):
         data = connection_info['data']
-        self._detach_blockdev(sdk_ve, data['device_path'], disk_info['dev'])
+        self._detach_blockdev(sdk_ve, data['device_path'],
+                              disk_info['dev'], ignore_errors)
 
 class PCSISCSIVolumeDriver(PCSBaseVolumeDriver):
 
@@ -218,7 +229,8 @@ class PCSISCSIVolumeDriver(PCSBaseVolumeDriver):
         return self._attach_blockdev(sdk_ve, host_device, disk_info['dev'])
 
     @utils.synchronized('connect_volume')
-    def disconnect_volume(self, connection_info, sdk_ve, disk_info):
+    def disconnect_volume(self, connection_info, sdk_ve,
+                          disk_info, ignore_errors):
         """Detach the volume from instance_name."""
         iscsi_properties = connection_info['data']
         multipath_device = None
@@ -230,7 +242,8 @@ class PCSISCSIVolumeDriver(PCSBaseVolumeDriver):
         if CONF.pcs_iscsi_use_multipath:
             multipath_device = self._get_multipath_device_name(host_device)
 
-        self._detach_blockdev(sdk_ve, host_device, disk_info['dev'])
+        self._detach_blockdev(sdk_ve, host_device,
+                              disk_info['dev'], ignore_errors)
 
         if CONF.pcs_iscsi_use_multipath and multipath_device:
             return self._disconnect_volume_multipath_iscsi(iscsi_properties)
@@ -471,8 +484,9 @@ class PCSPStorageVolumeDriver(PCSBaseVolumeDriver):
         return self._attach_image(sdk_ve,
                 os.path.join(mp, data['volume_name']))
 
-    def disconnect_volume(self, connection_info, sdk_ve, disk_info):
+    def disconnect_volume(self, connection_info, sdk_ve,
+                          disk_info, ignore_errors):
         data = connection_info['data']
         mp = self._get_mount_point(data)
         vol_path = os.path.join(mp, data['volume_name'])
-        self._detach_image(sdk_ve, vol_path)
+        self._detach_image(sdk_ve, vol_path, ignore_errors)

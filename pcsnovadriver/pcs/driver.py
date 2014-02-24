@@ -497,7 +497,7 @@ class PCSDriver(driver.ComputeDriver):
                 'dev': vol['mount_device'],
                 'mount_device': vol['mount_device']}
             self.volume_driver_method('disconnect_volume',
-                                connection_info, sdk_ve, disk_info)
+                                connection_info, sdk_ve, disk_info, True)
 
         sdk_ve.delete().wait()
 
