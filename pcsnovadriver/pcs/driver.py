@@ -761,10 +761,21 @@ class HostState(object):
         pver = pver.split('.')
         return int(pver[0]) * 10000 + int(pver[1]) * 100
 
+    def get_fs_info(self):
+        fsinfo = {}
+
+        uinfo = self.driver.psrv.get_user_profile().wait()[0]
+        vm_folder = uinfo.get_default_vm_folder()
+        s = os.statvfs(vm_folder)
+        fsinfo['total'] = s.f_frsize * s.f_blocks
+        fsinfo['used'] = s.f_frsize * (s.f_blocks - s.f_bfree)
+        return fsinfo
+
     def update_status(self):
         stat = self.driver.psrv.get_statistics().wait()[0]
         cfg = self.driver.psrv.get_srv_config().wait()[0]
         info = self.driver.psrv.get_server_info()
+        fsinfo = self.get_fs_info()
         data = {}
 
         data = dict()
@@ -773,8 +784,8 @@ class HostState(object):
         data['cpu_info'] = 0
         data['memory_mb'] = stat.get_total_ram_size() >> 20
         data['memory_mb_used'] = stat.get_usage_ram_size() >> 20
-        data['local_gb'] = 101 # TODO
-        data['local_gb_used'] = 44 # TODO
+        data['local_gb'] = fsinfo['total'] >> 30
+        data['local_gb_used'] = fsinfo['used'] >> 30
         data['hypervisor_type'] = 'PCS'
         data['hypervisor_version'] = self._format_ver(info.get_product_version())
         data['hypervisor_hostname'] = self.driver.host
