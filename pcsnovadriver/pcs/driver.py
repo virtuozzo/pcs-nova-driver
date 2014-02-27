@@ -479,14 +479,8 @@ class PCSDriver(driver.ComputeDriver):
         except exception.InstanceNotFound:
             return
 
-        vm_info = sdk_ve.get_state().wait().get_param()
-        state = vm_info.get_state()
-
         self._unplug_vifs(instance, sdk_ve, network_info)
-
-        # TODO: handle all possible states
-        if state == pc.VMS_RUNNING:
-            sdk_ve.stop_ex(pc.PSM_KILL, pc.PSF_FORCE).wait()
+        self._set_stopped_state(sdk_ve, True)
 
         block_device_mapping = driver.block_device_info_get_mapping(
             block_device_info)
