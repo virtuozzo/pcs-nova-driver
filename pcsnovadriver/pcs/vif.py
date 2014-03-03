@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (c) 2013-2014 Parallels, Inc.
 # All Rights Reserved.
 #
@@ -15,26 +13,25 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import os
-import re
 import netaddr
-
-import prlsdkapi
-from prlsdkapi import consts as pc
+import os
 
 from oslo.config import cfg
 
 from nova import exception
-from nova.openstack.common.gettextutils import _
 from nova.network import linux_net
 from nova.network import model as network_model
+from nova.openstack.common.gettextutils import _
 from nova.openstack.common import log as logging
 from nova import utils
 
+import prlsdkapi
+from prlsdkapi import consts as pc
+
 pcs_vif_opts = [
     cfg.BoolOpt('pcs_use_dhcp',
-                default = False,
-                help = 'Use DHCP agent for network configuration.'),
+                default=False,
+                help='Use DHCP agent for network configuration.'),
     ]
 
 CONF = cfg.CONF
@@ -42,8 +39,10 @@ CONF.register_opts(pcs_vif_opts)
 
 LOG = logging.getLogger(__name__)
 
+
 def get_bridge_ifaces(bridge):
     return os.listdir(os.path.join('/sys', 'class', 'net', bridge, 'brif'))
+
 
 def pcs_create_ovs_vif_port(bridge, dev, iface_id, iface_name,
                             mac, instance_id):
@@ -56,6 +55,7 @@ def pcs_create_ovs_vif_port(bridge, dev, iface_id, iface_name,
                   'external-ids:attached-mac=%s' % mac,
                   'external-ids:vm-uuid=%s' % instance_id,
                   run_as_root=True)
+
 
 class PCSVIFDriver(object):
 
@@ -78,11 +78,10 @@ class PCSVIFDriver(object):
                 return VifOvsEthernet()
         else:
             raise exception.NovaException(
-                _("Unexpected vif_type=%s") % vif_type)
+                _("Unexpected vif_type=%s") % vif['type'])
 
     def setup_dev(self, driver, instance, sdk_ve, vif):
-        """
-        This method is called before VE start and should
+        """This method is called before VE start and should
         do all work, that can't be done on running VE.
         """
         LOG.info("vif.setup_dev: %s:%s" % (instance['name'], vif['devname']))
@@ -98,6 +97,7 @@ class PCSVIFDriver(object):
         LOG.info("unplug: %s:%s" % (instance['name'], vif['devname']))
         vif_class = self._get_vif_class(instance, vif)
         vif_class.unplug(driver, instance, sdk_ve, vif)
+
 
 class BaseVif:
     def get_ovs_interfaceid(self, vif):
@@ -202,6 +202,7 @@ class BaseVif:
         netdev.set_auto_apply(1)
         sdk_ve.commit().wait()
 
+
 class VifOvsHybrid(BaseVif):
 
     def setup_dev(self, driver, instance, sdk_ve, vif):
@@ -255,6 +256,7 @@ class VifOvsHybrid(BaseVif):
         linux_net.delete_ovs_vif_port(self.get_bridge_name(vif), v2_name)
         utils.execute('ip', 'link', 'set', br_name, 'down', run_as_root=True)
         utils.execute('brctl', 'delbr', br_name, run_as_root=True)
+
 
 class VifOvsEthernet(BaseVif):
 
