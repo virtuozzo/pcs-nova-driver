@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (c) 2013-2014 Parallels, Inc.
 # All Rights Reserved.
 #
@@ -16,15 +14,15 @@
 #    under the License.
 
 import json
-import types
 from oslo.config import cfg
+import types
 
-from neutron.agent.linux import utils
-from neutron.agent.linux import iptables_manager
 from neutron.agent.linux.iptables_firewall import IptablesFirewallDriver
+from neutron.agent.linux import utils
 from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
+
 
 def get_ovs_vif_ports(bridge, search_str):
     """Find ports in the bridge and return python-like structure
@@ -39,7 +37,7 @@ def get_ovs_vif_ports(bridge, search_str):
     args = ['ovs-vsctl', '-f', 'json', '--timeout=2',
             '--', 'find', 'Interface', search_str]
     try:
-        out = utils.execute(args, root_helper = cfg.CONF.AGENT.root_helper)
+        out = utils.execute(args, root_helper=cfg.CONF.AGENT.root_helper)
     except Exception as e:
         LOG.error(_("Unable to execute %(cmd)s. Exception: %(exception)s"),
                     {'cmd': args, 'exception': e})
@@ -49,7 +47,7 @@ def get_ovs_vif_ports(bridge, search_str):
     for if_row in o['data']:
         iface = {}
         for i in xrange(len(o['headings'])):
-            if type(if_row[i]) != types.ListType:
+            if isinstance(if_row[i], types.ListType):
                 iface[o['headings'][i]] = if_row[i]
             elif if_row[i][0] == 'set':
                 iface[o['headings'][i]] = if_row[i][1]
@@ -61,6 +59,7 @@ def get_ovs_vif_ports(bridge, search_str):
                 raise Exception("Unknown data: %r" % if_row[i])
         ifaces.append(iface)
     return ifaces
+
 
 def get_ovs_vif_port_by_id(bridge, port_id):
     """Find OVS port by given port_id (value in exterenal_ids)
@@ -74,9 +73,9 @@ def get_ovs_vif_port_by_id(bridge, port_id):
     else:
         return ret[0]
 
+
 class PCSIptablesFirewallDriver(IptablesFirewallDriver):
-    """
-    Here is how neutron with OVS works:
+    """Here is how neutron with OVS works:
     br-int <pcsvoXXX>|--|<pcsvbXXX> pcsbrXXX <veth100.0>|---<eth0 in CT>
 
     First, we have integration bridge br-int and veth pair, one
@@ -105,6 +104,6 @@ class PCSIptablesFirewallDriver(IptablesFirewallDriver):
         br = cfg.CONF.OVS.integration_bridge
         try:
             xport = get_ovs_vif_port_by_id(br, port['device'])
-        except:
+        except Exception:
             LOG.warn('Skipping firewall setup for port %s' % port['device'])
         return xport['external_ids']['iface-name']
