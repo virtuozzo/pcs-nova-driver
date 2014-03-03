@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (c) 2013-2014 Parallels, Inc.
 # All Rights Reserved.
 #
@@ -17,11 +15,11 @@
 
 import os
 import re
-import subprocess
 import shlex
+import subprocess
 
-import prlsdkapi
 from prlsdkapi import consts as pc
+
 
 def compress_ploop(src, dst):
     cmd1 = ['tar', 'cO', '-C', src, '.']
@@ -30,12 +28,12 @@ def compress_ploop(src, dst):
     dst_file = open(dst, 'w')
     try:
         p1 = subprocess.Popen(cmd1, stdout=subprocess.PIPE)
-    except:
+    except Exception:
         dst_file.close()
 
     try:
         p2 = subprocess.Popen(cmd2, stdin=p1.stdout, stdout=dst_file)
-    except:
+    except Exception:
         p1.kill()
         p1.wait()
         raise
@@ -54,6 +52,7 @@ def compress_ploop(src, dst):
         msg += ', %r returned %d' % (cmd2, ret2)
     if msg:
         raise Exception(msg)
+
 
 def uncompress_ploop(src, dst, root_helper=""):
     cmd1 = ['prlcompress', '-u']
@@ -67,7 +66,7 @@ def uncompress_ploop(src, dst, root_helper=""):
 
     try:
         p2 = subprocess.Popen(cmd2, stdin=p1.stdout)
-    except:
+    except Exception:
         p1.kill()
         p1.wait()
         raise
@@ -85,19 +84,19 @@ def uncompress_ploop(src, dst, root_helper=""):
     if msg:
         raise Exception(msg)
 
+
 def _get_ct_boot_disk(ve):
-    """
-    Get first disk in config.
-    """
+    "Get first disk in config."
+
     hdd_count = ve.get_devs_count_by_type(pc.PDE_HARD_DISK)
     if hdd_count < 1:
         raise Exception("There are no hard disks in VE.")
     return ve.get_dev_by_type(pc.PDE_HARD_DISK, 0)
 
+
 def _get_vm_boot_disk(ve):
-    """
-    Get first hard disk from the boot devices list.
-    """
+    "Get first hard disk from the boot devices list."
+
     n = ve.get_boot_dev_count()
     for i in xrange(n):
         bootdev = ve.get_boot_dev(i)
@@ -109,15 +108,16 @@ def _get_vm_boot_disk(ve):
     else:
         raise Exception("Can't find boot hard disk.")
 
+
 def get_boot_disk(ve):
     if ve.get_vm_type() == pc.PVT_VM:
         return _get_vm_boot_disk(ve)
     else:
         return _get_ct_boot_disk(ve)
 
+
 def getstatusoutput(cmd):
-    """
-    getstatusoutput from commands module supports only string
+    """getstatusoutput from commands module supports only string
     commands, which isn't convenient.
     """
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
@@ -125,18 +125,18 @@ def getstatusoutput(cmd):
     ret = p.wait()
     return ret, out
 
+
 def system_exc(cmd):
-    """
-    Run command and raise exception in case of non-zero
+    """Run command and raise exception in case of non-zero
     exit code.
     """
     ret = subprocess.call(cmd)
     if ret:
         raise Exception("'%r' returned %d" % (cmd, ret))
 
+
 def convert_image(src, dst, disk_format, root_helper=''):
-    """
-    Convert image from ploop format to any, that qemu-img supports.
+    """Convert image from ploop format to any, that qemu-img supports.
     src: path to directory with ploop
     dst: path to output file name
     disk_format: disk format string
@@ -150,10 +150,11 @@ def convert_image(src, dst, disk_format, root_helper=''):
             raise Exception('Invalid output from %r: %s' % (cmd, out))
         ploop_dev = ro.group(1)
 
-        system_exc(shlex.split(root_helper) + ['qemu-img', 'convert', '-f', 'raw',
-                    '-O', disk_format, ploop_dev, dst])
+        system_exc(shlex.split(root_helper) + ['qemu-img', 'convert',
+                    '-f', 'raw', '-O', disk_format, ploop_dev, dst])
     finally:
         system_exc(shlex.split(root_helper) + ['ploop', 'umount', dd_path])
+
 
 class CPloopUploader(object):
     def __init__(self, hdd_path):
@@ -168,7 +169,7 @@ class CPloopUploader(object):
         try:
             self.p2 = subprocess.Popen(self.cmd2, stdin=self.p1.stdout,
                                              stdout=subprocess.PIPE)
-        except:
+        except Exception:
             self.p1.kill()
             self.p1.wait()
             raise
@@ -187,4 +188,3 @@ class CPloopUploader(object):
             msg += ', %r returned %d' % (self.cmd2, ret2)
         if msg:
             raise Exception(msg)
-
