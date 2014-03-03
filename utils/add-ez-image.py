@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
 
 # Copyright (c) 2013-2014 Parallels, Inc.
 # All Rights Reserved.
@@ -16,22 +15,24 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import os
-import sys
+from __future__ import print_function
+
 import commands
+import os
 import subprocess
+import sys
 
 if len(sys.argv) != 2:
-    print "Usage: %s <image-file> <extra glance args>" % sys.argv[0]
+    print("Usage: %s <image-file> <extra glance args>" % sys.argv[0])
     sys.exit(1)
 
 if not os.path.exists(sys.argv[1]):
-    print "File '%s' is not found" % sys.argv[1]
+    print("File '%s' is not found" % sys.argv[1])
 
 cmd = "rpm -q --qf '%%{NAME},%%{VERSION},%%{RELEASE}' -p '%s'" % sys.argv[1]
 ret, out = commands.getstatusoutput(cmd)
 if ret:
-    print "rpm returned %d" % ret
+    print("rpm returned %d" % ret)
 
 name, ver, rel = out.split(',')
 image_name = name[:-3]
