@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (c) 2013-2014 Parallels, Inc.
 # All Rights Reserved.
 #
@@ -15,27 +13,25 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import socket
 import os
-import subprocess
-import shlex
-import time
+import socket
 import tempfile
+import time
 
 import prlsdkapi
 from prlsdkapi import consts as pc
 
 from oslo.config import cfg
 
-from nova.image import glance
-from nova import exception
 from nova.compute import power_state
 from nova.compute import task_states
+from nova import exception
+from nova.image import glance
 from nova.openstack.common.gettextutils import _
 from nova.openstack.common import jsonutils
 from nova.openstack.common import log as logging
-from nova.virt import driver
 from nova import utils
+from nova.virt import driver
 
 from pcsnovadriver.pcs import imagecache
 from pcsnovadriver.pcs import template
@@ -46,30 +42,31 @@ LOG = logging.getLogger(__name__)
 
 pcs_opts = [
     cfg.StrOpt('pcs_login',
-                help = 'PCS SDK login'),
+                help='PCS SDK login'),
 
     cfg.StrOpt('pcs_password',
-                help = 'PCS SDK password'),
+                help='PCS SDK password'),
 
     cfg.StrOpt('pcs_template_dir',
-                default = '/vz/openstack-templates',
-                help = 'Directory for storing image cache.'),
+                default='/vz/openstack-templates',
+                help='Directory for storing image cache.'),
 
     cfg.StrOpt('pcs_snapshot_disk_format',
-                default = 'cploop',
-                help = 'Disk format for snapshots.'),
+                default='cploop',
+                help='Disk format for snapshots.'),
 
     cfg.StrOpt('pcs_snapshot_dir',
-                default = '/vz/openstack-snapshots',
-                help = 'Directory for snapshot operation.'),
+                default='/vz/openstack-snapshots',
+                help='Directory for snapshot operation.'),
 
     cfg.StrOpt('pcs_volume_drivers',
-                default = [
+                default=[
                     'local=pcsnovadriver.pcs.volume.PCSLocalVolumeDriver',
                     'iscsi=pcsnovadriver.pcs.volume.PCSISCSIVolumeDriver',
-                    'pstorage=pcsnovadriver.pcs.volume.PCSPStorageVolumeDriver',
+                    'pstorage='
+                    'pcsnovadriver.pcs.volume.PCSPStorageVolumeDriver',
                 ],
-                help = 'PCS handlers for remote volumes.'),
+                help='PCS handlers for remote volumes.'),
     ]
 
 CONF = cfg.CONF
@@ -79,56 +76,57 @@ CONF.register_opts(pcs_opts)
 PRL_PRIVILEGED_GUEST_OS_SESSION = "531582ac-3dce-446f-8c26-dd7e3384dcf4"
 
 PCS_POWER_STATE = {
-    pc.VMS_COMPACTING:           power_state.NOSTATE,
-    pc.VMS_CONTINUING:           power_state.NOSTATE,
-    pc.VMS_DELETING_STATE:       power_state.NOSTATE,
-    pc.VMS_MIGRATING:            power_state.NOSTATE,
-    pc.VMS_PAUSED:               power_state.PAUSED,
-    pc.VMS_PAUSING:              power_state.RUNNING,
-    pc.VMS_RESETTING:            power_state.RUNNING,
-    pc.VMS_RESTORING:            power_state.NOSTATE,
-    pc.VMS_RESUMING:             power_state.NOSTATE,
-    pc.VMS_RUNNING:              power_state.RUNNING,
-    pc.VMS_SNAPSHOTING:          power_state.RUNNING,
-    pc.VMS_STARTING:             power_state.RUNNING,
-    pc.VMS_STOPPED:              power_state.SHUTDOWN,
-    pc.VMS_STOPPING:             power_state.RUNNING,
-    pc.VMS_SUSPENDED:            power_state.SUSPENDED,
-    pc.VMS_SUSPENDING:           power_state.RUNNING,
-    pc.VMS_SUSPENDING_SYNC:      power_state.NOSTATE,
+    pc.VMS_COMPACTING: power_state.NOSTATE,
+    pc.VMS_CONTINUING: power_state.NOSTATE,
+    pc.VMS_DELETING_STATE: power_state.NOSTATE,
+    pc.VMS_MIGRATING: power_state.NOSTATE,
+    pc.VMS_PAUSED: power_state.PAUSED,
+    pc.VMS_PAUSING: power_state.RUNNING,
+    pc.VMS_RESETTING: power_state.RUNNING,
+    pc.VMS_RESTORING: power_state.NOSTATE,
+    pc.VMS_RESUMING: power_state.NOSTATE,
+    pc.VMS_RUNNING: power_state.RUNNING,
+    pc.VMS_SNAPSHOTING: power_state.RUNNING,
+    pc.VMS_STARTING: power_state.RUNNING,
+    pc.VMS_STOPPED: power_state.SHUTDOWN,
+    pc.VMS_STOPPING: power_state.RUNNING,
+    pc.VMS_SUSPENDED: power_state.SUSPENDED,
+    pc.VMS_SUSPENDING: power_state.RUNNING,
+    pc.VMS_SUSPENDING_SYNC: power_state.NOSTATE,
 }
 
 PCS_STATE_NAMES = {
-    pc.VMS_COMPACTING:           'COMPACTING',
-    pc.VMS_CONTINUING:           'CONTINUING',
-    pc.VMS_DELETING_STATE:       'DELETING_STATE',
-    pc.VMS_MIGRATING:            'MIGRATING',
-    pc.VMS_PAUSED:               'PAUSED',
-    pc.VMS_PAUSING:              'PAUSING',
-    pc.VMS_RESETTING:            'RESETTING',
-    pc.VMS_RESTORING:            'RESTORING',
-    pc.VMS_RESUMING:             'RESUMING',
-    pc.VMS_RUNNING:              'RUNNING',
-    pc.VMS_SNAPSHOTING:          'SNAPSHOTING',
-    pc.VMS_STARTING:             'STARTING',
-    pc.VMS_STOPPED:              'STOPPED',
-    pc.VMS_STOPPING:             'STOPPING',
-    pc.VMS_SUSPENDED:            'SUSPENDED',
-    pc.VMS_SUSPENDING:           'SUSPENDING',
-    pc.VMS_SUSPENDING_SYNC:      'SUSPENDING_SYNC',
+    pc.VMS_COMPACTING: 'COMPACTING',
+    pc.VMS_CONTINUING: 'CONTINUING',
+    pc.VMS_DELETING_STATE: 'DELETING_STATE',
+    pc.VMS_MIGRATING: 'MIGRATING',
+    pc.VMS_PAUSED: 'PAUSED',
+    pc.VMS_PAUSING: 'PAUSING',
+    pc.VMS_RESETTING: 'RESETTING',
+    pc.VMS_RESTORING: 'RESTORING',
+    pc.VMS_RESUMING: 'RESUMING',
+    pc.VMS_RUNNING: 'RUNNING',
+    pc.VMS_SNAPSHOTING: 'SNAPSHOTING',
+    pc.VMS_STARTING: 'STARTING',
+    pc.VMS_STOPPED: 'STOPPED',
+    pc.VMS_STOPPING: 'STOPPING',
+    pc.VMS_SUSPENDED: 'SUSPENDED',
+    pc.VMS_SUSPENDING: 'SUSPENDING',
+    pc.VMS_SUSPENDING_SYNC: 'SUSPENDING_SYNC',
 }
+
 
 def get_sdk_errcode(strerr):
     lib_err = getattr(prlsdkapi.prlsdk.errors, strerr)
     return prlsdkapi.conv_error(lib_err)
 
-firewall_msg = """nova's firewall deprecated, please 
-set it to nova.virt.firewall.NoopFirewallDriver and 
+firewall_msg = """nova's firewall deprecated, please
+set it to nova.virt.firewall.NoopFirewallDriver and
 use neutron's firewall. Edit /etc/neutron/plugin.conf
 and set
 firewall_driver=pcsnovadriver.neutron.pcs_firewall.PCSIptablesFirewallDriver
-in [SECURITYGROUP] section.
-"""
+in [SECURITYGROUP] section."""
+
 
 def get_iscsi_initiator():
     """Get iscsi initiator name for this machine."""
@@ -142,6 +140,7 @@ def get_iscsi_initiator():
     for l in contents.split('\n'):
         if l.startswith('InitiatorName='):
             return l[l.index('=') + 1:].strip()
+
 
 class PCSDriver(driver.ComputeDriver):
 
@@ -183,14 +182,14 @@ class PCSDriver(driver.ComputeDriver):
 
     def list_instances(self):
         LOG.info("list_instances")
-        flags = pc.PVTF_CT|pc.PVTF_VM
+        flags = pc.PVTF_CT | pc.PVTF_VM
         ves = self.psrv.get_vm_list_ex(nFlags=flags).wait()
         return map(lambda x: x.get_name(), ves)
 
     def list_instance_uuids(self):
         LOG.info("list_instance_uuids")
-        flags = pc.PVTF_CT|pc.PVTF_VM
-        ves = self.psrv.get_vm_list_ex(nFlags = flags).wait()
+        flags = pc.PVTF_CT | pc.PVTF_VM
+        ves = self.psrv.get_vm_list_ex(nFlags=flags).wait()
         return map(lambda x: x.get_uuid()[1:-1], ves)
 
     def instance_exists(self, instance_id):
@@ -205,7 +204,7 @@ class PCSDriver(driver.ComputeDriver):
         try:
             ve = self.psrv.get_vm_config(name,
                         prlsdkapi.consts.PGVC_SEARCH_BY_NAME).wait()[0]
-        except prlsdkapi.PrlSDKError, e:
+        except prlsdkapi.PrlSDKError as e:
             if e.error_code == get_sdk_errcode('PRL_ERR_VM_UUID_NOT_FOUND'):
                 raise exception.InstanceNotFound(instance_id=name)
             raise
@@ -257,14 +256,14 @@ class PCSDriver(driver.ComputeDriver):
             state = self._get_state(sdk_ve)
             if state not in intermediate_states:
                 break
-            LOG.info('VE "%s" is in %s state, waiting' % \
+            LOG.info('VE "%s" is in %s state, waiting' %
                      (sdk_ve.get_name(), PCS_STATE_NAMES[state]))
             time.sleep(1)
 
     def _set_started_state(self, sdk_ve):
         self._wait_intermediate_state(sdk_ve)
         state = self._get_state(sdk_ve)
-        LOG.info("Switch VE to RUNNING state, current is %s" % \
+        LOG.info("Switch VE to RUNNING state, current is %s" %
                                         PCS_STATE_NAMES[state])
         if state == pc.VMS_STOPPED:
             self._start(sdk_ve)
@@ -276,7 +275,7 @@ class PCSDriver(driver.ComputeDriver):
     def _set_stopped_state(self, sdk_ve, kill):
         self._wait_intermediate_state(sdk_ve)
         state = self._get_state(sdk_ve)
-        LOG.info("Switch VE to STOPPED state, current is %s" % \
+        LOG.info("Switch VE to STOPPED state, current is %s" %
                                         PCS_STATE_NAMES[state])
         if state == pc.VMS_RUNNING:
             self._stop(sdk_ve, kill)
@@ -290,7 +289,7 @@ class PCSDriver(driver.ComputeDriver):
     def _set_paused_state(self, sdk_ve):
         self._wait_intermediate_state(sdk_ve)
         state = self._get_state(sdk_ve)
-        LOG.info("Switch VE to PAUSED state, current is %s" % \
+        LOG.info("Switch VE to PAUSED state, current is %s" %
                                         PCS_STATE_NAMES[state])
         if state == pc.VMS_RUNNING:
             self._pause(sdk_ve)
@@ -304,7 +303,7 @@ class PCSDriver(driver.ComputeDriver):
     def _set_suspended_state(self, sdk_ve):
         self._wait_intermediate_state(sdk_ve)
         state = self._get_state(sdk_ve)
-        LOG.info("Switch VE to SUSPENDED state, current is %s" % \
+        LOG.info("Switch VE to SUSPENDED state, current is %s" %
                                         PCS_STATE_NAMES[state])
         if state == pc.VMS_RUNNING:
             self._suspend(sdk_ve)
@@ -380,7 +379,7 @@ class PCSDriver(driver.ComputeDriver):
             sdk_ve.set_resource(pc.PCR_SWAPPAGES, swappages, swappages)
         sdk_ve.commit().wait()
 
-        # TODO: tune swap size in VMs
+        # TODO(dguryanov): tune swap size in VMs
 
         if not resize_root_disk:
             return
@@ -394,7 +393,7 @@ class PCSDriver(driver.ComputeDriver):
 
     def _set_admin_password(self, sdk_ve, admin_password):
         if sdk_ve.get_vm_type() == pc.PVT_VM:
-            # FIXME: waiting for system boot is broken for VMs
+            # FIXME(dguryanov): waiting for system boot is broken for VMs
             LOG.info("Skip setting admin password")
             return
         session = sdk_ve.login_in_guest(
@@ -596,9 +595,8 @@ class PCSDriver(driver.ComputeDriver):
         return {'host': self.host, 'port': port, 'internal_access_path': None}
 
     def _reset_network(self, sdk_ve):
-        """
-        Remove all network adapters (except for venet, which
-        can't be removed).
+        """Remove all network adapters (except for venet,
+        which can't be removed).
         """
         ndevs = sdk_ve.get_devs_count_by_type(
                     pc.PDE_GENERIC_NETWORK_ADAPTER)
@@ -662,7 +660,7 @@ class PCSDriver(driver.ComputeDriver):
                 uploader.wait()
         else:
             dst = tempfile.mktemp(dir=os.path.dirname(hdd_path))
-            LOG.info("Convert image %s to %s format ..." % \
+            LOG.info("Convert image %s to %s format ..." %
                      (image_id, disk_format))
             pcsutils.convert_image(hdd_path, dst, disk_format,
                                    root_helper=utils.get_root_helper())
@@ -745,6 +743,7 @@ class PCSDriver(driver.ComputeDriver):
                     devices.append(self.get_disk_dev_path(dev))
         return devices
 
+
 class HostState(object):
     def __init__(self, driver):
         super(HostState, self).__init__()
@@ -780,14 +779,16 @@ class HostState(object):
 
         data = dict()
         data['vcpus'] = cfg.get_cpu_count()
-        data['vcpus_used'] = 0 # TODO: think, how we can provide used CPUs
+        # TODO(dguryanov): think, how we can provide used CPUs
+        data['vcpus_used'] = 0
         data['cpu_info'] = 0
         data['memory_mb'] = stat.get_total_ram_size() >> 20
         data['memory_mb_used'] = stat.get_usage_ram_size() >> 20
         data['local_gb'] = fsinfo['total'] >> 30
         data['local_gb_used'] = fsinfo['used'] >> 30
         data['hypervisor_type'] = 'PCS'
-        data['hypervisor_version'] = self._format_ver(info.get_product_version())
+        version = self._format_ver(info.get_product_version())
+        data['hypervisor_version'] = version
         data['hypervisor_hostname'] = self.driver.host
         data["supported_instances"] = jsonutils.dumps([('i686', 'pcs', 'hvm'),
                                        ('x86_64', 'pcs', 'hvm'),
@@ -797,4 +798,3 @@ class HostState(object):
         self._stats = data
 
         return data
-
