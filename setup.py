@@ -1,5 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
+#!/usr/bin/env python
 # Copyright (c) 2013-2014 Parallels, Inc.
 # All Rights Reserved.
 #
@@ -15,14 +14,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from setuptools import setup, find_packages
+import setuptools
 
-setup(
-	name = "pcs-nova-driver",
-	version = "0.1.0",
-	packages = find_packages(),
-	description='The PCS Driver for Nova',
-	author = "Parallels",
-	author_email = "dguryanov@parallels.com",
-	license = "Apache"
+setuptools.setup(
+    name="pcs-nova-driver",
+    version="0.1.0",
+    packages=setuptools.find_packages(),
+    description='The PCS Driver for Nova',
+    author="Parallels",
+    author_email="dguryanov@parallels.com",
+    license="Apache"
 )
