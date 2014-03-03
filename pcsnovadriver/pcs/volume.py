@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (c) 2013-2014 Parallels, Inc.
 # All Rights Reserved.
 #
@@ -17,6 +15,7 @@
 
 import os
 import tempfile
+import time
 
 from oslo.config import cfg
 
@@ -24,20 +23,19 @@ from nova import exception
 from nova.openstack.common.gettextutils import _
 from nova.openstack.common import log as logging
 from nova.openstack.common import processutils
-
-import prlsdkapi
-from prlsdkapi import consts as pc
 from nova import utils
+
+from prlsdkapi import consts as pc
 
 LOG = logging.getLogger(__name__)
 
 volume_opts = [
     cfg.IntOpt('num_iscsi_scan_tries',
                 default=3,
-                help='number of times to rescan iSCSI target to find volume'),
+                help='Number of times to rescan iSCSI target to find volume'),
     cfg.BoolOpt('pcs_iscsi_use_multipath',
                 default=False,
-                help='use multipath connection of the iSCSI volume'),
+                help='Use multipath connection of the iSCSI volume'),
 
    cfg.StrOpt('pstorage_mount_point_base',
                default='/pstorage/nova-compute',
@@ -47,6 +45,7 @@ volume_opts = [
 CONF = cfg.CONF
 CONF.register_opts(volume_opts)
 
+
 class PCSBaseVolumeDriver(object):
     """Base class for volume drivers."""
     def __init__(self, driver):
@@ -54,9 +53,9 @@ class PCSBaseVolumeDriver(object):
         self.driver = driver
 
     def _attach_blockdev(self, sdk_ve, host_device, guest_device):
-        #TODO: handle QOS specifications
-        #TODO: handle RW mode
-        #TODO: handle device name inside VE
+        #TODO(dguryanov): handle QOS specifications
+        #TODO(dguryanov): handle RW mode
+        #TODO(dguryanov): handle device name inside VE
         srv_cfg = self.driver.psrv.get_srv_config().wait().get_param()
         sdk_ve.begin_edit().wait()
         hdd = sdk_ve.add_default_device_ex(srv_cfg, pc.PDE_HARD_DISK)
@@ -87,9 +86,9 @@ class PCSBaseVolumeDriver(object):
         sdk_ve.commit().wait()
 
     def _attach_image(self, sdk_ve, image):
-        #TODO: handle QOS specifications
-        #TODO: handle RW mode
-        #TODO: handle device name inside VE
+        #TODO(dguryanov): handle QOS specifications
+        #TODO(dguryanov): handle RW mode
+        #TODO(dguryanov): handle device name inside VE
         srv_cfg = self.driver.psrv.get_srv_config().wait().get_param()
         sdk_ve.begin_edit().wait()
         hdd = sdk_ve.add_default_device_ex(srv_cfg, pc.PDE_HARD_DISK)
@@ -123,6 +122,7 @@ class PCSBaseVolumeDriver(object):
     def disconnect_volume(self, connection_info, sdk_ve, disk_info):
         raise NotImplementedError()
 
+
 class PCSLocalVolumeDriver(PCSBaseVolumeDriver):
 
     def connect_volume(self, connection_info, sdk_ve, disk_info):
@@ -135,6 +135,7 @@ class PCSLocalVolumeDriver(PCSBaseVolumeDriver):
         data = connection_info['data']
         self._detach_blockdev(sdk_ve, data['device_path'],
                               disk_info['dev'], ignore_errors)
+
 
 class PCSISCSIVolumeDriver(PCSBaseVolumeDriver):
 
@@ -425,6 +426,7 @@ class PCSISCSIVolumeDriver(PCSBaseVolumeDriver):
     def _rescan_multipath(self):
         self._run_multipath('-r', check_exit_code=[0, 1, 21])
 
+
 class PCSPStorageVolumeDriver(PCSBaseVolumeDriver):
 
     def _read_mounts(self):
@@ -462,7 +464,7 @@ class PCSPStorageVolumeDriver(PCSBaseVolumeDriver):
         mp = self._get_mount_point(data)
         try:
             utils.execute('stat', mp, run_as_root=True)
-        except:
+        except Exception:
             utils.execute('mkdir', '-p', mp, run_as_root=True)
         utils.execute('pstorage-mount', '-c', data['cluster_name'],
                         mp, run_as_root=True)
