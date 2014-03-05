@@ -219,4 +219,4 @@ class PCSDriverTestCase(test.TestCase):
 
         args = (self.conn, instance_running, sdk_ve, network_info_1vif[0],)
         self.conn.vif_driver.unplug.assert_called_once_with(*args)
-        self.assertEqual(sdk_ve.state, pc.VMS_RUNNING, "%r, %r" % (vm, instance_running))
+        self.assertEqual(sdk_ve.state, pc.VMS_RUNNING)
