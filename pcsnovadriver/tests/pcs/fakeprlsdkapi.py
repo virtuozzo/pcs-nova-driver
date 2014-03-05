@@ -103,8 +103,8 @@ class VmInfo(object):
 
 class Vm(object):
     def __init__(self, props):
-        self.props = props
-        self.state = props.pop('state', consts.VMS_STOPPED)
+        self.props = props.copy()
+        self.state = self.props.pop('state', consts.VMS_STOPPED)
         self.prev_state = None
 
     def get_name(self):
