@@ -25,7 +25,9 @@ from nova.openstack.common import log as logging
 from nova.openstack.common import processutils
 from nova import utils
 
-from prlsdkapi import consts as pc
+from pcsnovadriver.pcs import prlsdkapi_proxy
+
+pc = prlsdkapi_proxy.consts
 
 LOG = logging.getLogger(__name__)
 

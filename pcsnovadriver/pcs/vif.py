@@ -25,8 +25,9 @@ from nova.openstack.common.gettextutils import _
 from nova.openstack.common import log as logging
 from nova import utils
 
-import prlsdkapi
-from prlsdkapi import consts as pc
+from pcsnovadriver.pcs import prlsdkapi_proxy
+
+pc = prlsdkapi_proxy.consts
 
 pcs_vif_opts = [
     cfg.BoolOpt('pcs_use_dhcp',
@@ -184,7 +185,7 @@ class BaseVif:
             netdev.set_configure_with_dhcp(1)
 
             # Setup IP addresses
-            iplist = prlsdkapi.StringList()
+            iplist = prlsdkapi_proxy.sdk.StringList()
             for ip in subnet['ips']:
                 cidr = netaddr.IPNetwork(subnet['cidr'])
                 if ip['type'] != 'fixed':

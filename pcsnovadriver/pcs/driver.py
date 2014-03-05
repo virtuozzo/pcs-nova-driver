@@ -18,9 +18,6 @@ import socket
 import tempfile
 import time
 
-import prlsdkapi
-from prlsdkapi import consts as pc
-
 from oslo.config import cfg
 
 from nova.compute import power_state
@@ -37,6 +34,10 @@ from pcsnovadriver.pcs import imagecache
 from pcsnovadriver.pcs import template
 from pcsnovadriver.pcs import utils as pcsutils
 from pcsnovadriver.pcs.vif import PCSVIFDriver
+from pcsnovadriver.pcs import prlsdkapi_proxy
+
+pc = prlsdkapi_proxy.consts
+
 
 LOG = logging.getLogger(__name__)
 
@@ -117,8 +118,8 @@ PCS_STATE_NAMES = {
 
 
 def get_sdk_errcode(strerr):
-    lib_err = getattr(prlsdkapi.prlsdk.errors, strerr)
-    return prlsdkapi.conv_error(lib_err)
+    lib_err = getattr(prlsdkapi_proxy.sdk.prlsdk.errors, strerr)
+    return prlsdkapi_proxy.sdk.conv_error(lib_err)
 
 firewall_msg = """nova's firewall deprecated, please
 set it to nova.virt.firewall.NoopFirewallDriver and
@@ -175,8 +176,8 @@ class PCSDriver(driver.ComputeDriver):
         if not self.host:
             self.host = host
 
-        prlsdkapi.init_server_sdk()
-        self.psrv = prlsdkapi.Server()
+        prlsdkapi_proxy.sdk.init_server_sdk()
+        self.psrv = prlsdkapi_proxy.sdk.Server()
         self.psrv.login('localhost', CONF.pcs_login, CONF.pcs_password).wait()
         self
 
@@ -203,8 +204,8 @@ class PCSDriver(driver.ComputeDriver):
     def _get_ve_by_name(self, name):
         try:
             ve = self.psrv.get_vm_config(name,
-                        prlsdkapi.consts.PGVC_SEARCH_BY_NAME).wait()[0]
-        except prlsdkapi.PrlSDKError as e:
+                        pc.PGVC_SEARCH_BY_NAME).wait()[0]
+        except prlsdkapi_proxy.sdk.PrlSDKError as e:
             if e.error_code == get_sdk_errcode('PRL_ERR_VM_UUID_NOT_FOUND'):
                 raise exception.InstanceNotFound(instance_id=name)
             raise
@@ -338,6 +339,7 @@ class PCSDriver(driver.ComputeDriver):
                           power_state.SHUTDOWN,
                           power_state.CRASHED,
                           power_state.SUSPENDED,
+                          power_state.PAUSED,
                           ]
         LOG.info("plug_vifs: %s" % instance['name'])
         if instance['power_state'] in stopped_states:
@@ -409,7 +411,7 @@ class PCSDriver(driver.ComputeDriver):
         sdk_ve.set_default_config(srv_cfg, os_ver, True)
         sdk_ve.set_uuid('{%s}' % instance['uuid'])
         sdk_ve.set_name(instance['name'])
-        sdk_ve.set_vm_type(prlsdkapi.consts.PVT_VM)
+        sdk_ve.set_vm_type(pc.PVT_VM)
 
         # remove unneded devices
         n = sdk_ve.get_devs_count_by_type(pc.PDE_HARD_DISK)

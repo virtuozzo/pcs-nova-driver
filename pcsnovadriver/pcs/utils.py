@@ -18,8 +18,9 @@ import re
 import shlex
 import subprocess
 
-from prlsdkapi import consts as pc
+from pcsnovadriver.pcs import prlsdkapi_proxy
 
+pc = prlsdkapi_proxy.consts
 
 def compress_ploop(src, dst):
     cmd1 = ['tar', 'cO', '-C', src, '.']

@@ -29,9 +29,9 @@ from nova import utils
 from nova.virt import images
 
 from pcsnovadriver.pcs import utils as pcsutils
+from pcsnovadriver.pcs import prlsdkapi_proxy
 
-import prlsdkapi
-from prlsdkapi import consts as pc
+pc = prlsdkapi_proxy.consts
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
@@ -169,11 +169,11 @@ class EzTemplate(PCSTemplate):
             return self._cmp_version(rel1, rel2)
 
     def create_instance(self, psrv, instance):
-        sdk_ve = psrv.get_default_vm_config(prlsdkapi.consts.PVT_CT,
+        sdk_ve = psrv.get_default_vm_config(pc.PVT_CT,
                                             'vswap.1024MB', 0, 0).wait()[0]
         sdk_ve.set_uuid(instance['uuid'])
         sdk_ve.set_name(instance['name'])
-        sdk_ve.set_vm_type(prlsdkapi.consts.PVT_CT)
+        sdk_ve.set_vm_type(pc.PVT_CT)
         sdk_ve.set_os_template(self.name)
         sdk_ve.reg('', True).wait()
         return sdk_ve
@@ -214,11 +214,11 @@ class DiskCacheTemplate(PCSTemplate):
         raise NotImplementedError()
 
     def _create_ct(self, psrv, instance):
-        sdk_ve = psrv.get_default_vm_config(prlsdkapi.consts.PVT_CT,
+        sdk_ve = psrv.get_default_vm_config(pc.PVT_CT,
                                             'vswap.1024MB', 0, 0).wait()[0]
         sdk_ve.set_uuid(instance['uuid'])
         sdk_ve.set_name(instance['name'])
-        sdk_ve.set_vm_type(prlsdkapi.consts.PVT_CT)
+        sdk_ve.set_vm_type(pc.PVT_CT)
         sdk_ve.set_os_template(self.image_info['properties']['pcs_ostemplate'])
         LOG.info("Creating container from eztemplate ...")
         sdk_ve.reg('', True).wait()
