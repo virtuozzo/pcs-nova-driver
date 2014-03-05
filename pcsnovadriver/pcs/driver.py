@@ -312,7 +312,7 @@ class PCSDriver(driver.ComputeDriver):
             self._unpause(sdk_ve)
             self._suspend(sdk_ve)
         elif state == pc.VMS_STOPPED:
-            self._stop(sdk_ve)
+            self._start(sdk_ve)
             self._suspend(sdk_ve)
 
     def _sync_ve_state(self, sdk_ve, instance):
