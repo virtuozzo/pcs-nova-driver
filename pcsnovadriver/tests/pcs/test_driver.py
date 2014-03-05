@@ -76,6 +76,9 @@ class PCSDriverTestCase(test.TestCase):
     def test_instance_exists_notexists(self):
         self.assertFalse(self.conn.instance_exists('x' + vms[0]['name']))
 
+    def test_get_host_ip_addr(self):
+        self.assertEqual(self.conn.get_host_ip_addr(), CONF.my_ip)
+
     def test_get_info(self):
         vm = vms[0]
         info = self.conn.get_info({'id': vm['uuid'], 'name': vm['name']})
