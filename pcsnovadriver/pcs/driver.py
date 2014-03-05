@@ -31,10 +31,10 @@ from nova import utils
 from nova.virt import driver
 
 from pcsnovadriver.pcs import imagecache
+from pcsnovadriver.pcs import prlsdkapi_proxy
 from pcsnovadriver.pcs import template
 from pcsnovadriver.pcs import utils as pcsutils
 from pcsnovadriver.pcs.vif import PCSVIFDriver
-from pcsnovadriver.pcs import prlsdkapi_proxy
 
 pc = prlsdkapi_proxy.consts
 

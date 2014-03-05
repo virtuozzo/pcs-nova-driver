@@ -22,6 +22,7 @@ from pcsnovadriver.pcs import prlsdkapi_proxy
 
 pc = prlsdkapi_proxy.consts
 
+
 def compress_ploop(src, dst):
     cmd1 = ['tar', 'cO', '-C', src, '.']
     cmd2 = ['prlcompress', '-p']

@@ -28,8 +28,8 @@ from nova.openstack.common import processutils
 from nova import utils
 from nova.virt import images
 
-from pcsnovadriver.pcs import utils as pcsutils
 from pcsnovadriver.pcs import prlsdkapi_proxy
+from pcsnovadriver.pcs import utils as pcsutils
 
 pc = prlsdkapi_proxy.consts
 
