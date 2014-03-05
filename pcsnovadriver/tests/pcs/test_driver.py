@@ -173,3 +173,39 @@ class PCSDriverTestCase(test.TestCase):
 
         self.assertEqual(self.conn.vif_driver.plug.call_count, 0)
         self.assertEqual(sdk_ve.state, pc.VMS_STOPPED)
+
+    def test__sync_ve_state(self):
+        sdk_states = {
+                pc.VMS_STOPPED: 'VMS_STOPPED',
+                pc.VMS_RUNNING: 'VMS_RUNNING',
+                pc.VMS_PAUSED: 'VMS_PAUSED',
+                pc.VMS_SUSPENDED: 'VMS_SUSPENDED',
+            }
+
+        openstack_states = {
+                power_state.RUNNING: pc.VMS_RUNNING,
+                power_state.PAUSED: pc.VMS_PAUSED,
+                power_state.SHUTDOWN: pc.VMS_STOPPED,
+                power_state.CRASHED: pc.VMS_STOPPED,
+                power_state.SUSPENDED: pc.VMS_SUSPENDED,
+            }
+
+        vm = {
+                'name': 'instance123',
+                'uuid': '{d58fe074-ce99-46b7-8ce1-83620ba26426}',
+                'ram_size': 2048,
+                'cpu_count': 4,
+            }
+
+        instance = {
+                'name': vm['name'],
+            }
+
+        for cur in sdk_states:
+            for req in openstack_states:
+                vm['state'] = cur
+                sdk_ve = fakeprlsdkapi.Vm(vm)
+                instance['power_state'] = req
+                self.conn._sync_ve_state(sdk_ve, instance)
+                msg = "%s->%s" % (sdk_states[cur], power_state.STATE_MAP[req])
+                self.assertEqual(sdk_ve.state, openstack_states[req], msg)
