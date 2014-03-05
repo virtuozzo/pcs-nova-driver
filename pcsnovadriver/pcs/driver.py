@@ -324,9 +324,9 @@ class PCSDriver(driver.ComputeDriver):
         elif req_state == power_state.PAUSED:
             self._set_paused_state(sdk_ve)
         elif req_state == power_state.SHUTDOWN:
-            self._set_stopped_state(sdk_ve)
+            self._set_stopped_state(sdk_ve, False)
         elif req_state == power_state.CRASHED:
-            self._set_stopped_state(sdk_ve)
+            self._set_stopped_state(sdk_ve, True)
         elif req_state == power_state.SUSPENDED:
             self._set_suspended_state(sdk_ve)
 
