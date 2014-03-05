@@ -15,6 +15,7 @@
 
 from oslo.config import cfg
 
+from nova.compute import power_state
 from nova import test
 from nova.virt import fake
 
@@ -38,11 +39,17 @@ CONF.firewall_driver = "nova.virt.firewall.NoopFirewallDriver"
 vms = [
         {
             'name': 'instance001',
-            'uuid': '{19be06cb-a6f2-47a7-a53e-11bc6d4c3b98}'
+            'uuid': '{19be06cb-a6f2-47a7-a53e-11bc6d4c3b98}',
+            'ram_size': 1024,
+            'cpu_count': 1,
+            'state': fakeprlsdkapi.consts.VMS_STOPPED,
         },
         {
             'name': 'instance002',
             'uuid': '{d58fe074-ce99-46b7-8ce1-83620ba26426}',
+            'ram_size': 2048,
+            'cpu_count': 4,
+            'state': fakeprlsdkapi.consts.VMS_RUNNING,
         },
 ]
 
@@ -68,3 +75,13 @@ class PCSDriverTestCase(test.TestCase):
 
     def test_instance_exists_notexists(self):
         self.assertFalse(self.conn.instance_exists('x' + vms[0]['name']))
+
+    def test_get_info(self):
+        vm = vms[0]
+        info = self.conn.get_info({'id': vm['uuid'], 'name': vm['name']})
+        self.assertEqual(info['state'], power_state.SHUTDOWN)
+        self.assertEqual(info['max_mem'], vm['ram_size'])
+        self.assertEqual(info['mem'], vm['ram_size'])
+        self.assertEqual(info['num_cpu'], vm['cpu_count'])
+        self.assertEqual(info['cpu_time'], 1000)
+

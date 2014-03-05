@@ -173,6 +173,12 @@ class Vm(object):
     def get_state(self):
         return Job([VmInfo({'state': self.state})])
 
+    def get_ram_size(self):
+        return self.props['ram_size']
+
+    def get_cpu_count(self):
+        return self.props['cpu_count']
+
 class Server(object):
 
     def __init__(self):
