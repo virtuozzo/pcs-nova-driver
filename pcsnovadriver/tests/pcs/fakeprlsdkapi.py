@@ -44,6 +44,7 @@ class Consts:
 
     PSF_FORCE = 0x0001
 
+
 class Errors(object):
     PRL_ERR_VM_UUID_NOT_FOUND = 0x0001
     PRL_ERR_DISP_VM_IS_NOT_STOPPED = 0x0002
@@ -81,6 +82,7 @@ class Result():
     def get_param(self):
         return self.objects[0]
 
+
 class Job(object):
 
     def __init__(self, objects=[], error=None):
@@ -101,6 +103,7 @@ class VmInfo(object):
     def get_state(self):
         return self.props['state']
 
+
 class Vm(object):
     def __init__(self, props):
         self.props = props.copy()
@@ -115,7 +118,7 @@ class Vm(object):
 
     def start(self):
         if self.state in [consts.VMS_PAUSED,
-                            consts.VMS_STOPPED,]:
+                            consts.VMS_STOPPED]:
             self.prev_state = self.state
             self.state = consts.VMS_RUNNING
             return Job()
@@ -178,6 +181,7 @@ class Vm(object):
 
     def get_cpu_count(self):
         return self.props['cpu_count']
+
 
 class Server(object):
 

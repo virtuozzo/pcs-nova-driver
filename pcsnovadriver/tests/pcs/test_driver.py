@@ -78,6 +78,7 @@ network_info_3vif = [
                 {'id': uuidutils.generate_uuid()},
             ]
 
+
 class PCSDriverTestCase(test.TestCase):
 
     def setUp(self):
