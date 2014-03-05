@@ -203,6 +203,6 @@ class Server(object):
                 return Job([vm])
             elif nFlags == consts.PGVC_SEARCH_BY_UUID and id == vm.get_uuid():
                 return Job([vm])
-        raise PrlSDKError(errors.PRL_ERR_VM_UUID_NOT_FOUND)
+        return Job(error=PrlSDKError(errors.PRL_ERR_VM_UUID_NOT_FOUND))
 
 consts = Consts()
