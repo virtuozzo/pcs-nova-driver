@@ -209,3 +209,13 @@ class PCSDriverTestCase(test.TestCase):
                 self.conn._sync_ve_state(sdk_ve, instance)
                 msg = "%s->%s" % (sdk_states[cur], power_state.STATE_MAP[req])
                 self.assertEqual(sdk_ve.state, openstack_states[req], msg)
+
+    def test_unplug_vifs(self):
+        vm = vm_running
+        sdk_ve = self._prep_plug_vifs(vm)
+
+        self.conn.unplug_vifs(instance_running, network_info_1vif)
+
+        args = (self.conn, instance_running, sdk_ve, network_info_1vif[0],)
+        self.conn.vif_driver.unplug.assert_called_once_with(*args)
+        self.assertEqual(sdk_ve.state, pc.VMS_RUNNING, "%r, %r" % (vm, instance_running))
