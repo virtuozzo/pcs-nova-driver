@@ -39,9 +39,15 @@ class Consts:
     PGVC_SEARCH_BY_NAME = 0x0001
     PGVC_SEARCH_BY_UUID = 0x0002
 
+    PSM_KILL = 0x0001
+    PSM_ACPI = 0x0002
+
+    PSF_FORCE = 0x0001
 
 class Errors(object):
     PRL_ERR_VM_UUID_NOT_FOUND = 0x0001
+    PRL_ERR_DISP_VM_IS_NOT_STOPPED = 0x0002
+    PRL_ERR_DISP_VM_IS_NOT_STARTED = 0x0003
 
 errors = Errors()
 
@@ -72,19 +78,34 @@ class Result():
     def __getitem__(self, n):
         return self.objects[n]
 
+    def get_param(self):
+        return self.objects[0]
 
 class Job(object):
 
-    def __init__(self, objects=[]):
+    def __init__(self, objects=[], error=None):
         self.objects = objects
+        self.error = error
 
     def wait(self):
+        if self.error:
+            raise self.error
         return Result(self.objects)
 
+
+class VmInfo(object):
+
+    def __init__(self, props):
+        self.props = props
+
+    def get_state(self):
+        return self.props['state']
 
 class Vm(object):
     def __init__(self, props):
         self.props = props
+        self.state = props.pop('state', consts.VMS_STOPPED)
+        self.prev_state = None
 
     def get_name(self):
         return self.props['name']
@@ -92,6 +113,65 @@ class Vm(object):
     def get_uuid(self):
         return self.props['uuid']
 
+    def start(self):
+        if self.state in [consts.VMS_PAUSED,
+                            consts.VMS_STOPPED,]:
+            self.prev_state = self.state
+            self.state = consts.VMS_RUNNING
+            return Job()
+        elif self.state == consts.VMS_SUSPENDED:
+            return self.resume()
+        else:
+            err = PrlSDKError(errors.PRL_ERR_DISP_VM_IS_NOT_STOPPED)
+            return Job(error=err)
+
+    def start_ex(self, flags1, flags2):
+        return self.start()
+
+    def stop(self):
+        if self.state == consts.VMS_RUNNING:
+            self.prev_state = self.state
+            self.state = consts.VMS_STOPPED
+            return Job()
+        else:
+            err = PrlSDKError(errors.PRL_ERR_DISP_VM_IS_NOT_STARTED)
+            return Job(error=err)
+
+    def stop_ex(self, flags1, flags2):
+        return self.stop()
+
+    def pause(self):
+        if self.state == consts.VMS_RUNNING:
+            self.prev_state = self.state
+            self.state = consts.VMS_PAUSED
+            return Job()
+        else:
+            err = PrlSDKError(errors.PRL_ERR_DISP_VM_IS_NOT_STARTED)
+            return Job(error=err)
+
+    def suspend(self):
+        if self.state == consts.VMS_RUNNING:
+            self.prev_state = self.state
+            self.state = consts.VMS_SUSPENDED
+            return Job()
+        else:
+            err = PrlSDKError(errors.PRL_ERR_DISP_VM_IS_NOT_STARTED)
+            return Job(error=err)
+
+    def resume(self):
+        if self.state == consts.VMS_SUSPENDED:
+            tmp = self.prev_state
+            if not tmp:
+                tmp = consts.VMS_RUNNING
+            self.prev_state = self.state
+            self.state = tmp
+            return Job()
+        else:
+            err = PrlSDKError(errors.PRL_ERR_DISP_VM_IS_NOT_STOPPED)
+            return Job(error=err)
+
+    def get_state(self):
+        return Job([VmInfo({'state': self.state})])
 
 class Server(object):
 
