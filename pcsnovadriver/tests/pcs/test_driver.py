@@ -26,6 +26,7 @@ from pcsnovadriver.pcs import prlsdkapi_proxy
 from pcsnovadriver.tests.pcs import fakeprlsdkapi
 
 prlsdkapi_proxy.prlsdkapi = fakeprlsdkapi
+pc = fakeprlsdkapi.consts
 
 from pcsnovadriver.pcs import driver
 
@@ -44,7 +45,7 @@ vm_stopped = {
             'uuid': '{19be06cb-a6f2-47a7-a53e-11bc6d4c3b98}',
             'ram_size': 1024,
             'cpu_count': 1,
-            'state': fakeprlsdkapi.consts.VMS_STOPPED,
+            'state': pc.VMS_STOPPED,
         }
 
 vm_running = {
@@ -52,7 +53,7 @@ vm_running = {
             'uuid': '{d58fe074-ce99-46b7-8ce1-83620ba26426}',
             'ram_size': 2048,
             'cpu_count': 4,
-            'state': fakeprlsdkapi.consts.VMS_RUNNING,
+            'state': pc.VMS_RUNNING,
         }
 
 vms = [vm_stopped, vm_running]
@@ -128,7 +129,7 @@ class PCSDriverTestCase(test.TestCase):
 
         args = (self.conn, instance_running, sdk_ve, network_info_1vif[0],)
         self.conn.vif_driver.plug.assert_called_once_with(*args)
-        self.assertEqual(sdk_ve.state, fakeprlsdkapi.consts.VMS_RUNNING)
+        self.assertEqual(sdk_ve.state, pc.VMS_RUNNING)
 
     def test_plug_vifs_stopped(self):
         vm = vm_stopped
@@ -137,7 +138,7 @@ class PCSDriverTestCase(test.TestCase):
         self.conn.plug_vifs(instance_stopped, network_info_1vif)
 
         self.assertEqual(self.conn.vif_driver.plug.call_count, 0)
-        self.assertEqual(sdk_ve.state, fakeprlsdkapi.consts.VMS_STOPPED)
+        self.assertEqual(sdk_ve.state, pc.VMS_STOPPED)
 
     def test_plug_vifs_unexistent(self):
         instance = {
@@ -160,7 +161,7 @@ class PCSDriverTestCase(test.TestCase):
 
         args = (self.conn, instance, sdk_ve, network_info_1vif[0],)
         self.conn.vif_driver.plug.assert_called_once_with(*args)
-        self.assertEqual(sdk_ve.state, fakeprlsdkapi.consts.VMS_RUNNING)
+        self.assertEqual(sdk_ve.state, pc.VMS_RUNNING)
 
     def test_plug_vifs_started_stopped(self):
         vm = vm_running
@@ -171,4 +172,4 @@ class PCSDriverTestCase(test.TestCase):
         self.conn.plug_vifs(instance, network_info_1vif)
 
         self.assertEqual(self.conn.vif_driver.plug.call_count, 0)
-        self.assertEqual(sdk_ve.state, fakeprlsdkapi.consts.VMS_STOPPED)
+        self.assertEqual(sdk_ve.state, pc.VMS_STOPPED)
