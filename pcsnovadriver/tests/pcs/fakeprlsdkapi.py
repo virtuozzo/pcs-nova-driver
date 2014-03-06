@@ -13,6 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import threading
+
 
 class Consts:
     VMS_COMPACTING = 0x0001
@@ -44,11 +46,29 @@ class Consts:
 
     PSF_FORCE = 0x0001
 
+    PVT_VM = 0x0001
+    PVT_CT = 0x0002
+
+    PDE_HARD_DISK = 0x0001
+    PDE_GENERIC_NETWORK_ADAPTER = 0x0002
+
+    PMS_SATA_DEVICE = 0x0001
+
+    PNA_BRIDGED_ETHERNET = 0x0001
+    PNA_ROUTED = 0x0002
+
+    PSM_VM_START = 0x0001
+
+    PNSF_VM_START_WAIT = 0x0001
+
+consts = Consts()
+
 
 class Errors(object):
     PRL_ERR_VM_UUID_NOT_FOUND = 0x0001
     PRL_ERR_DISP_VM_IS_NOT_STOPPED = 0x0002
     PRL_ERR_DISP_VM_IS_NOT_STARTED = 0x0003
+    PRL_ERR_CONFIG_BEGIN_EDIT_NOT_FOUND_OBJECT_UUID = 0x0004
 
 errors = Errors()
 
@@ -70,6 +90,11 @@ def init_server_sdk():
 class PrlSDKError(Exception):
     def __init__(self, err):
         self.error_code = 3 * err + 0x1000000
+
+
+class FakePrlSDKError(Exception):
+    "Custom errors from this module"
+    pass
 
 
 class Result():
@@ -104,11 +129,44 @@ class VmInfo(object):
         return self.props['state']
 
 
+class VmDevice(object):
+    def __init__(self, vm, idx, props):
+        self.vm = vm
+        self.idx = idx
+        self.props = props
+
+    def get_emulated_type(self):
+        return self.props['emulated_type']
+
+    def remove(self):
+        tid = threading.currentThread().ident
+        self.vm.writers[tid]['props']['devs'][self.type].pop(self.idx)
+
+
+class VmHardDisk(VmDevice):
+    type = consts.PDE_HARD_DISK
+
+    def resize_image(self, size, flags):
+        return Job()
+
+
+class VmNet(VmDevice):
+    type = consts.PDE_GENERIC_NETWORK_ADAPTER
+
+device_classes = {
+    consts.PDE_HARD_DISK: VmHardDisk,
+    consts.PDE_GENERIC_NETWORK_ADAPTER: VmNet,
+}
+
+
 class Vm(object):
     def __init__(self, props):
         self.props = props.copy()
         self.state = self.props.pop('state', consts.VMS_STOPPED)
         self.prev_state = None
+        self.lock = threading.Lock()
+        self.config_version = 0
+        self.writers = {}
 
     def get_name(self):
         return self.props['name']
@@ -179,8 +237,55 @@ class Vm(object):
     def get_ram_size(self):
         return self.props['ram_size']
 
+    def set_ram_size(self, ram_size):
+        tid = threading.currentThread().ident
+        self.writers[tid]['props']['ram_size'] = ram_size
+
     def get_cpu_count(self):
         return self.props['cpu_count']
+
+    def set_cpu_count(self, cpu_count):
+        tid = threading.currentThread().ident
+        self.writers[tid]['props']['cpu_count'] = cpu_count
+
+    def get_vm_type(self):
+        return self.props['vm_type']
+
+    def set_vm_type(self, vm_type):
+        tid = threading.currentThread().ident
+        self.writers[tid]['props']['vm_type'] = vm_type
+
+    def begin_edit(self):
+        tid = threading.currentThread().ident
+        if tid in self.writers:
+            err = FakePrlSDKError("Second call to begin_edit()")
+            return Job(error=err)
+        writer = {}
+        writer['config_version'] = self.config_version
+        writer['props'] = self.props
+        self.writers[tid] = writer
+        return Job()
+
+    def commit(self):
+        tid = threading.currentThread().ident
+        if tid not in self.writers:
+            err = FakePrlSDKError("Call to commit() not after begin_edit()")
+            return Job(error=err)
+        with self.lock:
+            writer = self.writers.pop(tid)
+            if writer['config_version'] != self.config_version:
+                e = errors.PRL_ERR_CONFIG_BEGIN_EDIT_NOT_FOUND_OBJECT_UUID
+                return Job(error=PrlSDKError(e))
+            self.config_version = writer['config_version'] + 1
+            self.props = writer['props']
+        return Job()
+
+    def get_devs_count_by_type(self, dev_type):
+        return len(self.props['devs'][dev_type])
+
+    def get_dev_by_type(self, dev_type, idx):
+        dev_props = self.props['devs'][dev_type][idx]
+        return device_classes[dev_type](self, idx, dev_props)
 
 
 class Server(object):
@@ -208,5 +313,3 @@ class Server(object):
             elif nFlags == consts.PGVC_SEARCH_BY_UUID and id == vm.get_uuid():
                 return Job([vm])
         return Job(error=PrlSDKError(errors.PRL_ERR_VM_UUID_NOT_FOUND))
-
-consts = Consts()

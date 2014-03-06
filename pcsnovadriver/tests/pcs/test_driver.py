@@ -17,7 +17,10 @@ import mock
 
 from oslo.config import cfg
 
+from nova.compute import flavors
 from nova.compute import power_state
+from nova import context
+from nova import db
 from nova.openstack.common import uuidutils
 from nova import test
 from nova.virt import fake
@@ -46,6 +49,19 @@ vm_stopped = {
             'ram_size': 1024,
             'cpu_count': 1,
             'state': pc.VMS_STOPPED,
+            'vm_type': pc.PVT_VM,
+            'devs': {
+                pc.PDE_HARD_DISK: [
+                    {
+                        'emulated_type': pc.PMS_SATA_DEVICE,
+                    },
+                ],
+                pc.PDE_GENERIC_NETWORK_ADAPTER: [
+                    {
+                        'emulated_type': pc.PNA_BRIDGED_ETHERNET,
+                    },
+                ],
+            }
         }
 
 vm_running = {
@@ -86,6 +102,27 @@ class PCSDriverTestCase(test.TestCase):
         self.conn = driver.PCSDriver(fake.FakeVirtAPI(), True)
         self.conn.init_host(host='localhost')
         self.conn.psrv.test_add_vms(vms)
+
+        self.user_id = 'fake'
+        self.project_id = 'fake'
+        self.context = context.get_admin_context()
+
+    def _prep_instance(self):
+        type_id = 5  # m1.small
+        flavor = db.flavor_get(self.context, type_id)
+        sys_meta = flavors.save_flavor_info({}, flavor)
+
+        instance_ref = {
+            'uuid': '1e4fa700-a506-11e3-a1fc-7071bc7738b5',
+            'power_state': power_state.SHUTDOWN,
+            'image_ref': uuidutils.generate_uuid(),
+            'user_id': self.user_id,
+            'project_id': self.project_id,
+            'instance_type_id': str(type_id),
+            'system_metadata': sys_meta,
+            'extra_specs': {},
+            }
+        return db.instance_create(self.context, instance_ref)
 
     def test_list_instances(self):
         instances = self.conn.list_instances()
@@ -220,3 +257,15 @@ class PCSDriverTestCase(test.TestCase):
         args = (self.conn, instance_running, sdk_ve, network_info_1vif[0],)
         self.conn.vif_driver.unplug.assert_called_once_with(*args)
         self.assertEqual(sdk_ve.state, pc.VMS_RUNNING)
+
+    def test_spawn_vm(self):
+        func_name = 'pcsnovadriver.pcs.template.get_template'
+        with mock.patch(func_name) as get_template_mock:
+            template = get_template_mock.return_value
+            sdk_ve = fakeprlsdkapi.Vm(vm_stopped)
+            template.create_instance.return_value = sdk_ve
+            instance = self._prep_instance()
+            admin_pw = 'fon234mc9pd1'
+            self.conn.vif_driver = mock.MagicMock()
+            self.conn.spawn(self.context, instance, None, [],
+                        admin_pw, network_info_1vif, [])
