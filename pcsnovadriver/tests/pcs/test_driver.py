@@ -321,21 +321,30 @@ class PCSDriverTestCase(test.TestCase):
 
     def test_spawn_vm_from_image(self):
         func_name = 'pcsnovadriver.pcs.template.get_template'
+        srv = self.conn.psrv
         with mock.patch(func_name) as get_template_mock:
             template = get_template_mock.return_value
-            sdk_ve = self.conn.psrv.test_add_vm(vm_stopped)
-            template.create_instance.return_value = sdk_ve
             instance = self._prep_instance_boot_image()
+            sdk_ve = srv.test_add_vm(vm_stopped)
+            sdk_ve.props['name'] = instance['name']
+            template.create_instance.return_value = sdk_ve
             admin_pw = 'fon234mc9pd1'
             self.conn.spawn(self.context, instance, None, [],
                         admin_pw, network_info_1vif, [])
 
+            srv.get_vm_config(instance['name'], pc.PGVC_SEARCH_BY_NAME).wait()
+            self.conn.vif_driver.plug.assert_called_once()
+
     def test_spawn_vm_from_volume(self):
         instance = self._prep_instance_boot_volume()
         admin_pw = 'fon234mc9pd1'
+        srv = self.conn.psrv
 
         self.conn.spawn(self.context, instance, None, [],
                     admin_pw, network_info_1vif, block_device_info1)
+
+        srv.get_vm_config(instance['name'], pc.PGVC_SEARCH_BY_NAME).wait()
+        self.conn.vif_driver.plug.assert_called_once()
 
     def _prep_instance_and_vm(self, **kwargs):
         instance = self._prep_instance_boot_volume(**kwargs)
