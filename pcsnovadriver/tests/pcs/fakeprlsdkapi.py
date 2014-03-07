@@ -61,6 +61,10 @@ class Consts:
 
     PNSF_VM_START_WAIT = 0x0001
 
+    PVS_GUEST_VER_LIN_REDHAT = 0x0001
+
+    PDT_USE_REAL_HDD = 0x0002
+
 consts = Consts()
 
 
@@ -69,6 +73,7 @@ class Errors(object):
     PRL_ERR_DISP_VM_IS_NOT_STOPPED = 0x0002
     PRL_ERR_DISP_VM_IS_NOT_STARTED = 0x0003
     PRL_ERR_CONFIG_BEGIN_EDIT_NOT_FOUND_OBJECT_UUID = 0x0004
+    PRL_ERR_OPERATION_FAILED = 0x0005
 
 errors = Errors()
 
@@ -129,18 +134,47 @@ class VmInfo(object):
         return self.props['state']
 
 
+class ServerConfig(object):
+    pass
+
+
 class VmDevice(object):
     def __init__(self, vm, idx, props):
         self.vm = vm
         self.idx = idx
         self.props = props
 
-    def get_emulated_type(self):
-        return self.props['emulated_type']
+    def _get_thread_config(self):
+        tid = threading.currentThread().ident
+        return self.vm.writers[tid]['props']['devs'][self.type][self.idx]
 
     def remove(self):
         tid = threading.currentThread().ident
         self.vm.writers[tid]['props']['devs'][self.type].pop(self.idx)
+
+    def get_emulated_type(self):
+        return self.props['emulated_type']
+
+    def set_emulated_type(self, emu_type):
+        dev = self._get_thread_config()
+        dev['emulated_type'] = emu_type
+
+    def get_friendly_name(self):
+        return self.props['friendly_name']
+
+    def set_friendly_name(self, name):
+        dev = self._get_thread_config()
+        dev['friendly_name'] = name
+
+    def get_sys_name(self):
+        return self.props['sys_name']
+
+    def set_sys_name(self, name):
+        dev = self._get_thread_config()
+        dev['sys_name'] = name
+
+    def get_index(self):
+        return self.idx
 
 
 class VmHardDisk(VmDevice):
@@ -157,6 +191,36 @@ device_classes = {
     consts.PDE_HARD_DISK: VmHardDisk,
     consts.PDE_GENERIC_NETWORK_ADAPTER: VmNet,
 }
+
+
+class BootDevice(object):
+
+    def __init__(self, vm, seq_idx=-1, props={}):
+        self.vm = vm
+        self.props = props
+        self.seq_idx = seq_idx
+
+    def _get_thread_config(self):
+        tid = threading.currentThread().ident
+        return self.vm.writers[tid]['props']['boot_order'][self.seq_idx]
+
+    def set_type(self, dev_type):
+        dev = self._get_thread_config()
+        dev['type'] = dev_type
+
+    def set_index(self, index):
+        dev = self._get_thread_config()
+        dev['index'] = index
+
+    def set_sequence_index(self, index):
+        tid = threading.currentThread().ident
+        boot_order = self.vm.writers[tid]['props']['boot_order']
+        dev = boot_order.pop(self.seq_idx)
+        boot_order.insert(index, dev)
+
+    def set_in_use(self, in_use):
+        dev = self._get_thread_config()
+        dev['in_use'] = in_use
 
 
 class Vm(object):
@@ -287,6 +351,45 @@ class Vm(object):
         dev_props = self.props['devs'][dev_type][idx]
         return device_classes[dev_type](self, idx, dev_props)
 
+    def set_default_config(self, srv_cfg, os_ver, need_devs):
+        pass
+
+    def set_uuid(self, uuid):
+        tid = threading.currentThread().ident
+        self.writers[tid]['props']['uuid'] = uuid
+
+    def set_name(self, name):
+        tid = threading.currentThread().ident
+        self.writers[tid]['props']['name'] = name
+
+    def reg(self, path, non_int_mode):
+        return self.commit()
+
+    def add_default_device_ex(self, srv_cfg, dev_type):
+        tid = threading.currentThread().ident
+        i = 0
+        while 1:
+            if i not in self.writers[tid]['props']['devs']:
+                break
+            i += 1
+        i += 1
+        dev_props = {}
+        if dev_type == consts.PDE_HARD_DISK:
+            dev_props['emulated_type'] = consts.PMS_SATA_DEVICE
+        elif dev_type == consts.PDE_GENERIC_NETWORK_ADAPTER:
+            dev_props['emulated_type'] = consts.PNA_BRIDGED_ETHERNET
+        else:
+            raise PrlSDKError(errors.PRL_ERR_OPERATION_FAILED)
+
+        self.writers[tid]['props']['devs'][dev_type][i] = dev_props
+        return self.get_dev_by_type(dev_type, i)
+
+    def create_boot_dev(self):
+        tid = threading.currentThread().ident
+        boot_dev = BootDevice(self)
+        self.writers[tid]['props']['boot_order'].append({})
+        return boot_dev
+
 
 class Server(object):
 
@@ -313,3 +416,30 @@ class Server(object):
             elif nFlags == consts.PGVC_SEARCH_BY_UUID and id == vm.get_uuid():
                 return Job([vm])
         return Job(error=PrlSDKError(errors.PRL_ERR_VM_UUID_NOT_FOUND))
+
+    def get_srv_config(self):
+        return Job([ServerConfig()])
+
+    def create_vm(self):
+        props = {
+                'ram_size': 1024,
+                'cpu_count': 1,
+                'state': consts.VMS_STOPPED,
+                'devs': {
+                    consts.PDE_HARD_DISK: {
+                        0: {
+                            'emulated_type': consts.PDT_USE_REAL_HDD,
+                        },
+                    },
+                    consts.PDE_GENERIC_NETWORK_ADAPTER: {
+                        0: {
+                            'emulated_type': consts.PNA_BRIDGED_ETHERNET,
+                        },
+                    },
+                },
+                'boot_order': [],
+            }
+
+        vm = Vm(props)
+        vm.begin_edit().wait()
+        return vm

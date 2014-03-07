@@ -26,6 +26,7 @@ from nova import test
 from nova.virt import fake
 
 from pcsnovadriver.pcs import prlsdkapi_proxy
+from pcsnovadriver.pcs import volume
 from pcsnovadriver.tests.pcs import fakeprlsdkapi
 
 prlsdkapi_proxy.prlsdkapi = fakeprlsdkapi
@@ -40,8 +41,11 @@ CONF.import_opt('host', 'nova.netconf')
 CONF.import_opt('my_ip', 'nova.netconf')
 CONF.import_opt('image_cache_subdirectory_name', 'nova.virt.imagecache')
 CONF.import_opt('instances_path', 'nova.compute.manager')
+CONF.import_opt('pcs_volume_drivers', 'pcsnovadriver.pcs.driver')
 
 CONF.firewall_driver = "nova.virt.firewall.NoopFirewallDriver"
+CONF.pcs_volume_drivers = \
+    ['fake=pcsnovadriver.tests.pcs.test_driver.FakeVolumeDriver']
 
 vm_stopped = {
             'name': 'instance001',
@@ -51,16 +55,16 @@ vm_stopped = {
             'state': pc.VMS_STOPPED,
             'vm_type': pc.PVT_VM,
             'devs': {
-                pc.PDE_HARD_DISK: [
-                    {
-                        'emulated_type': pc.PMS_SATA_DEVICE,
+                pc.PDE_HARD_DISK: {
+                    0: {
+                        'emulated_type': pc.PDT_USE_REAL_HDD,
                     },
-                ],
-                pc.PDE_GENERIC_NETWORK_ADAPTER: [
-                    {
+                },
+                pc.PDE_GENERIC_NETWORK_ADAPTER: {
+                    0: {
                         'emulated_type': pc.PNA_BRIDGED_ETHERNET,
                     },
-                ],
+                },
             }
         }
 
@@ -94,6 +98,36 @@ network_info_3vif = [
                 {'id': uuidutils.generate_uuid()},
             ]
 
+block_device_info1 = {
+    'block_device_mapping': [
+        {
+            'connection_info': {
+                'data': {
+                    'device_path': '/qwe',
+                    },
+                'driver_volume_type': 'fake',
+            },
+            'mount_device': 'vda',
+        },
+    ],
+    'ephemerals': [],
+    'root_device_name': 'vda',
+    'swap': None,
+}
+
+
+class FakeVolumeDriver(volume.PCSBaseVolumeDriver):
+    def connect_volume(self, connection_info, sdk_ve, disk_info):
+        data = connection_info['data']
+        return self._attach_blockdev(sdk_ve,
+                    data['device_path'], disk_info['dev'])
+
+    def disconnect_volume(self, connection_info, sdk_ve,
+                    disk_info, ignore_errors):
+        data = connection_info['data']
+        self._detach_blockdev(sdk_ve, data['device_path'],
+                    disk_info['dev'], ignore_errors)
+
 
 class PCSDriverTestCase(test.TestCase):
 
@@ -107,22 +141,32 @@ class PCSDriverTestCase(test.TestCase):
         self.project_id = 'fake'
         self.context = context.get_admin_context()
 
-    def _prep_instance(self):
+    def _prep_instance(self, instance_ref):
         type_id = 5  # m1.small
         flavor = db.flavor_get(self.context, type_id)
         sys_meta = flavors.save_flavor_info({}, flavor)
 
-        instance_ref = {
-            'uuid': '1e4fa700-a506-11e3-a1fc-7071bc7738b5',
-            'power_state': power_state.SHUTDOWN,
-            'image_ref': uuidutils.generate_uuid(),
-            'user_id': self.user_id,
-            'project_id': self.project_id,
-            'instance_type_id': str(type_id),
-            'system_metadata': sys_meta,
-            'extra_specs': {},
-            }
+        instance_ref.update(
+            uuid='1e4fa700-a506-11e3-a1fc-7071bc7738b5',
+            power_state=power_state.SHUTDOWN,
+            user_id=self.user_id,
+            project_id=self.project_id,
+            instance_type_id=str(type_id),
+            system_metadata=sys_meta,
+            extra_specs={},
+        )
         return db.instance_create(self.context, instance_ref)
+
+    def _prep_instance_boot_image(self):
+        instance_ref = {}
+        instance_ref['image_ref'] = uuidutils.generate_uuid()
+        return self._prep_instance(instance_ref)
+
+    def _prep_instance_boot_volume(self):
+        instance_ref = {}
+        instance_ref['image_ref'] = None
+        instance_ref['root_device_name'] = 'vda'
+        return self._prep_instance(instance_ref)
 
     def test_list_instances(self):
         instances = self.conn.list_instances()
@@ -258,14 +302,23 @@ class PCSDriverTestCase(test.TestCase):
         self.conn.vif_driver.unplug.assert_called_once_with(*args)
         self.assertEqual(sdk_ve.state, pc.VMS_RUNNING)
 
-    def test_spawn_vm(self):
+    def test_spawn_vm_from_image(self):
         func_name = 'pcsnovadriver.pcs.template.get_template'
         with mock.patch(func_name) as get_template_mock:
             template = get_template_mock.return_value
             sdk_ve = fakeprlsdkapi.Vm(vm_stopped)
             template.create_instance.return_value = sdk_ve
-            instance = self._prep_instance()
+            instance = self._prep_instance_boot_image()
             admin_pw = 'fon234mc9pd1'
             self.conn.vif_driver = mock.MagicMock()
             self.conn.spawn(self.context, instance, None, [],
                         admin_pw, network_info_1vif, [])
+
+    def test_spawn_vm_from_volume(self):
+        instance = self._prep_instance_boot_volume()
+        admin_pw = 'fon234mc9pd1'
+        self.conn.vif_driver = mock.MagicMock()
+        self.conn.volume_driver = FakeVolumeDriver(self.conn)
+
+        self.conn.spawn(self.context, instance, None, [],
+                    admin_pw, network_info_1vif, block_device_info1)
