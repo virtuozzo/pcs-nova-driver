@@ -230,28 +230,21 @@ class PCSDriverTestCase(test.TestCase):
         self.assertEqual(info['num_cpu'], vm['cpu_count'])
         self.assertEqual(info['cpu_time'], 1000)
 
-    def _prep_plug_vifs(self, vm):
-        self.conn._get_ve_by_name = mock.MagicMock()
-        sdk_ve = self.conn.psrv.test_add_vm(vm)
-        self.conn._get_ve_by_name.return_value = sdk_ve
-
-        return sdk_ve
-
     def test_plug_vifs_running(self):
-        vm = vm_running
-        sdk_ve = self._prep_plug_vifs(vm)
+        instance, sdk_ve = self._prep_instance_and_vm(
+                                power_state=power_state.RUNNING)
 
-        self.conn.plug_vifs(instance_running, network_info_1vif)
+        self.conn.plug_vifs(instance, network_info_1vif)
 
-        args = (self.conn, instance_running, sdk_ve, network_info_1vif[0],)
+        args = (self.conn, instance, sdk_ve, network_info_1vif[0],)
         self.conn.vif_driver.plug.assert_called_once_with(*args)
         self.assertEqual(sdk_ve.state, pc.VMS_RUNNING)
 
     def test_plug_vifs_stopped(self):
-        vm = vm_stopped
-        sdk_ve = self._prep_plug_vifs(vm)
+        instance, sdk_ve = self._prep_instance_and_vm(
+                                power_state=power_state.SHUTDOWN)
 
-        self.conn.plug_vifs(instance_stopped, network_info_1vif)
+        self.conn.plug_vifs(instance, network_info_1vif)
 
         self.assertEqual(self.conn.vif_driver.plug.call_count, 0)
         self.assertEqual(sdk_ve.state, pc.VMS_STOPPED)
@@ -268,11 +261,10 @@ class PCSDriverTestCase(test.TestCase):
         self.assertEqual(self.conn.vif_driver.plug.call_count, 0)
 
     def test_plug_vifs_stopped_started(self):
-        vm = vm_stopped
-        sdk_ve = self._prep_plug_vifs(vm)
+        instance, sdk_ve = self._prep_instance_and_vm(
+                                power_state=power_state.RUNNING)
+        sdk_ve.stop().wait()
 
-        instance = instance_stopped.copy()
-        instance['power_state'] = power_state.RUNNING
         self.conn.plug_vifs(instance, network_info_1vif)
 
         args = (self.conn, instance, sdk_ve, network_info_1vif[0],)
@@ -280,11 +272,10 @@ class PCSDriverTestCase(test.TestCase):
         self.assertEqual(sdk_ve.state, pc.VMS_RUNNING)
 
     def test_plug_vifs_started_stopped(self):
-        vm = vm_running
-        sdk_ve = self._prep_plug_vifs(vm)
+        instance, sdk_ve = self._prep_instance_and_vm(
+                                power_state=power_state.SHUTDOWN)
+        sdk_ve.start().wait()
 
-        instance = instance_running.copy()
-        instance['power_state'] = power_state.SHUTDOWN
         self.conn.plug_vifs(instance, network_info_1vif)
 
         self.assertEqual(self.conn.vif_driver.plug.call_count, 0)
@@ -319,12 +310,12 @@ class PCSDriverTestCase(test.TestCase):
                 self.assertEqual(sdk_ve.state, OPENSTACK_STATES[req], msg)
 
     def test_unplug_vifs(self):
-        vm = vm_running
-        sdk_ve = self._prep_plug_vifs(vm)
+        instance, sdk_ve = self._prep_instance_and_vm(
+                                power_state=power_state.RUNNING)
 
-        self.conn.unplug_vifs(instance_running, network_info_1vif)
+        self.conn.unplug_vifs(instance, network_info_1vif)
 
-        args = (self.conn, instance_running, sdk_ve, network_info_1vif[0],)
+        args = (self.conn, instance, sdk_ve, network_info_1vif[0],)
         self.conn.vif_driver.unplug.assert_called_once_with(*args)
         self.assertEqual(sdk_ve.state, pc.VMS_RUNNING)
 
