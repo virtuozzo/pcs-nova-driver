@@ -364,6 +364,7 @@ class Vm(object):
         self.writers[tid]['props']['name'] = name
 
     def reg(self, path, non_int_mode):
+        self.srv.vms.append(self)
         return self.commit()
 
     def add_default_device_ex(self, srv_cfg, dev_type):
@@ -398,7 +399,9 @@ class Server(object):
         self.vms = []
 
     def test_add_vm(self, props):
-        self.vms.append(Vm(self, props))
+        vm = Vm(self, props)
+        self.vms.append(vm)
+        return vm
 
     def test_add_vms(self, prop_list):
         for props in prop_list:
