@@ -141,7 +141,7 @@ class PCSDriverTestCase(test.TestCase):
         self.project_id = 'fake'
         self.context = context.get_admin_context()
 
-    def _prep_instance(self, instance_ref):
+    def _prep_instance(self, instance_ref, **kwargs):
         type_id = 5  # m1.small
         flavor = db.flavor_get(self.context, type_id)
         sys_meta = flavors.save_flavor_info({}, flavor)
@@ -155,18 +155,22 @@ class PCSDriverTestCase(test.TestCase):
             system_metadata=sys_meta,
             extra_specs={},
         )
+
+        for key, val in kwargs.items():
+            instance_ref[key] = val
+
         return db.instance_create(self.context, instance_ref)
 
-    def _prep_instance_boot_image(self):
+    def _prep_instance_boot_image(self, **kwargs):
         instance_ref = {}
         instance_ref['image_ref'] = uuidutils.generate_uuid()
-        return self._prep_instance(instance_ref)
+        return self._prep_instance(instance_ref, **kwargs)
 
-    def _prep_instance_boot_volume(self):
+    def _prep_instance_boot_volume(self, **kwargs):
         instance_ref = {}
         instance_ref['image_ref'] = None
         instance_ref['root_device_name'] = 'vda'
-        return self._prep_instance(instance_ref)
+        return self._prep_instance(instance_ref, **kwargs)
 
     def test_list_instances(self):
         instances = self.conn.list_instances()
