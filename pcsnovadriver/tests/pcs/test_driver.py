@@ -342,7 +342,6 @@ class PCSDriverTestCase(test.TestCase):
     def test_spawn_vm_from_volume(self):
         instance = self._prep_instance_boot_volume()
         admin_pw = 'fon234mc9pd1'
-        self.conn.volume_driver = FakeVolumeDriver(self.conn)
 
         self.conn.spawn(self.context, instance, None, [],
                     admin_pw, network_info_1vif, block_device_info1)
@@ -364,7 +363,6 @@ class PCSDriverTestCase(test.TestCase):
         srv.get_vm_config(instance['name'], pc.PGVC_SEARCH_BY_NAME).wait()
 
         self.conn.get_disk_dev_path = mock.MagicMock()
-        self.conn.volume_driver = FakeVolumeDriver(self.conn)
 
         self.conn.destroy(instance, network_info_1vif, block_device_info1)
 
