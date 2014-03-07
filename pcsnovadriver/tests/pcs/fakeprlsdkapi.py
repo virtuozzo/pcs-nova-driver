@@ -392,6 +392,10 @@ class Vm(object):
         self.writers[tid]['props']['boot_order'].append({})
         return boot_dev
 
+    def delete(self):
+        self.srv.vms.remove(self)
+        return Job()
+
 
 class Server(object):
 

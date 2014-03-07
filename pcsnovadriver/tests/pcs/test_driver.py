@@ -115,6 +115,29 @@ block_device_info1 = {
     'swap': None,
 }
 
+vm_with_disk = {
+    'name': 'instance003',
+    'uuid': '{19be06cb-a6f2-47a7-a53e-11bc6d4c3b99}',
+    'ram_size': 1024,
+    'cpu_count': 1,
+    'state': pc.VMS_STOPPED,
+    'vm_type': pc.PVT_VM,
+    'devs': {
+        pc.PDE_HARD_DISK: {
+            0: {
+                'emulated_type': pc.PDT_USE_REAL_HDD,
+                'friendly_name': 'vda',
+                'sys_name': '/qwe'
+            },
+        },
+        pc.PDE_GENERIC_NETWORK_ADAPTER: {
+            0: {
+                'emulated_type': pc.PNA_BRIDGED_ETHERNET,
+            },
+        },
+    }
+}
+
 
 class FakeVolumeDriver(volume.PCSBaseVolumeDriver):
     def connect_volume(self, connection_info, sdk_ve, disk_info):
@@ -326,3 +349,29 @@ class PCSDriverTestCase(test.TestCase):
 
         self.conn.spawn(self.context, instance, None, [],
                     admin_pw, network_info_1vif, block_device_info1)
+
+    def test_destroy(self):
+        srv = self.conn.psrv
+
+        instance = self._prep_instance_boot_volume()
+
+        vm = vm_with_disk.copy()
+        vm['uuid'] = '{%s}' % instance['uuid']
+        vm['name'] = instance['name']
+        sdk_ve = srv.test_add_vm(vm)
+
+        # check Vm exists
+        srv.get_vm_config(instance['name'], pc.PGVC_SEARCH_BY_NAME).wait()
+
+        self.conn.vif_driver = mock.MagicMock()
+        self.conn.get_disk_dev_path = mock.MagicMock()
+        self.conn.volume_driver = FakeVolumeDriver(self.conn)
+
+        self.conn.destroy(instance, network_info_1vif, block_device_info1)
+
+        job = srv.get_vm_config(instance['name'], pc.PGVC_SEARCH_BY_NAME)
+        self.assertRaises(fakeprlsdkapi.PrlSDKError, job.wait)
+
+    def test_destroy_unexistent(self):
+        instance = self._prep_instance_boot_image()
+        self.conn.destroy(instance, network_info_1vif, None)
