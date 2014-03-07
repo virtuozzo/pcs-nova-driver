@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import copy
 import threading
 
 
@@ -135,7 +136,42 @@ class VmInfo(object):
 
 
 class ServerConfig(object):
-    pass
+
+    def __init__(self, props):
+        self.props = props
+
+    def get_cpu_count(self):
+        return self.props['cpu_count']
+
+
+class Statistics(object):
+
+    def __init__(self, props):
+        self.props = props
+
+    def get_total_ram_size(self):
+        return self.props['total_ram']
+
+    def get_usage_ram_size(self):
+        return self.props['usage_ram']
+
+
+class ServerInfo(object):
+
+    def __init__(self, props):
+        self.props = props
+
+    def get_product_version(self):
+        return self.props['product_version']
+
+
+class UserProfile(object):
+
+    def __init__(self, props):
+        self.props = props
+
+    def get_default_vm_folder(self):
+        return self.props['default_vm_folder']
 
 
 class VmDevice(object):
@@ -419,6 +455,16 @@ class Server(object):
         for props in prop_list:
             self.test_add_vm(props)
 
+    def test_set_host_info(self, ex_info):
+        info = copy.deepcopy(ex_info)
+        info['stats']['total_ram'] = info['stats']['total_ram'] << 20
+        info['stats']['usage_ram'] = info['stats']['usage_ram'] << 20
+
+        self.server_info = ServerInfo(info['info'])
+        self.server_config = ServerConfig(info['cfg'])
+        self.statistics = Statistics(info['stats'])
+        self.user_profile = UserProfile(info['user_profile'])
+
     def login(self, host, login, password):
         return Job()
 
@@ -434,7 +480,16 @@ class Server(object):
         return Job(error=PrlSDKError(errors.PRL_ERR_VM_UUID_NOT_FOUND))
 
     def get_srv_config(self):
-        return Job([ServerConfig()])
+        return Job([self.server_config])
+
+    def get_server_info(self):
+        return self.server_info
+
+    def get_statistics(self):
+        return Job([self.statistics])
+
+    def get_user_profile(self):
+        return Job([self.user_profile])
 
     def create_vm(self):
         props = {

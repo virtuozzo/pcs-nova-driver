@@ -146,6 +146,22 @@ OPENSTACK_STATES = {
     power_state.SUSPENDED: pc.VMS_SUSPENDED,
 }
 
+HOST_INFO = {
+    'stats': {
+        'total_ram': 16536,
+        'usage_ram': 2345,
+    },
+    'cfg': {
+        'cpu_count': 8,
+    },
+    'info': {
+        'product_version': '6.5.23309.945088',
+    },
+    'user_profile': {
+        'default_vm_folder': '/vz',
+    },
+}
+
 
 class FakeVolumeDriver(volume.PCSBaseVolumeDriver):
     def connect_volume(self, connection_info, sdk_ve, disk_info):
@@ -167,6 +183,7 @@ class PCSDriverTestCase(test.TestCase):
         self.conn = driver.PCSDriver(fake.FakeVirtAPI(), True)
         self.conn.init_host(host='localhost')
         self.conn.psrv.test_add_vms(vms)
+        self.conn.psrv.test_set_host_info(HOST_INFO)
         self.conn.vif_driver = mock.MagicMock()
 
         self.user_id = 'fake'
@@ -441,3 +458,39 @@ class PCSDriverTestCase(test.TestCase):
         self.conn.power_on(self.context, instance, network_info_1vif)
 
         self.assertEqual(sdk_ve.state, pc.VMS_RUNNING)
+
+    def test_get_host_stats(self):
+        class StatVfs:
+            pass
+
+        def check_stats():
+            self.assertEqual(stats['vcpus'], HOST_INFO['cfg']['cpu_count'])
+            self.assertEqual(stats['vcpus_used'], 0)
+            self.assertEqual(stats['cpu_info'], 0)
+            self.assertEqual(stats['memory_mb'],
+                             HOST_INFO['stats']['total_ram'])
+            self.assertEqual(stats['memory_mb_used'],
+                             HOST_INFO['stats']['usage_ram'])
+            self.assertEqual(stats['local_gb'], local_gb)
+            self.assertEqual(stats['local_gb_used'], local_gb_used)
+            self.assertEqual(stats['hypervisor_type'], 'PCS')
+            self.assertEqual(stats['hypervisor_version'], 60500)
+            self.assertEqual(stats['hypervisor_hostname'], 'localhost')
+
+        with mock.patch('os.statvfs') as statvfs:
+            ret = StatVfs()
+            local_gb = 2134
+            local_gb_used = 342
+            ret.f_frsize = 4096
+            ret.f_blocks = (local_gb << 30) / 4096
+            ret.f_bfree = ((local_gb - local_gb_used) << 30) / 4096
+            statvfs.return_value = ret
+
+            stats = self.conn.get_host_stats(False)
+            check_stats()
+
+            stats = self.conn.get_host_stats(True)
+            check_stats()
+
+            stats = self.conn.get_available_resource(None)
+            check_stats()
