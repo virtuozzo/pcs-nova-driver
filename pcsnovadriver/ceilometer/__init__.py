@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # Copyright (c) 2013-2014 Parallels, Inc.
 # All Rights Reserved.
 #
@@ -13,17 +12,3 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-
-import setuptools
-
-setuptools.setup(
-    name="pcs-nova-driver",
-    version="0.1.0",
-    packages=setuptools.find_packages(),
-    description='The PCS Driver for Nova',
-    author="Parallels",
-    author_email="dguryanov@parallels.com",
-    license="Apache",
-    entry_points={'ceilometer.compute.virt': 'parallels = pcsnovadriver.'
-                                'ceilometer.inspector:ParallelsInspector'},
-)
