@@ -224,7 +224,8 @@ class BootDevice(object):
 
 
 class Vm(object):
-    def __init__(self, props):
+    def __init__(self, srv, props):
+        self.srv = srv
         self.props = props.copy()
         self.state = self.props.pop('state', consts.VMS_STOPPED)
         self.prev_state = None
@@ -397,7 +398,7 @@ class Server(object):
         self.vms = []
 
     def test_add_vm(self, props):
-        self.vms.append(Vm(props))
+        self.vms.append(Vm(self, props))
 
     def test_add_vms(self, prop_list):
         for props in prop_list:
@@ -440,6 +441,6 @@ class Server(object):
                 'boot_order': [],
             }
 
-        vm = Vm(props)
+        vm = Vm(self, props)
         vm.begin_edit().wait()
         return vm

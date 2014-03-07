@@ -196,7 +196,7 @@ class PCSDriverTestCase(test.TestCase):
 
     def _prep_plug_vifs(self, vm):
         self.conn._get_ve_by_name = mock.MagicMock()
-        sdk_ve = fakeprlsdkapi.Vm(vm)
+        sdk_ve = fakeprlsdkapi.Vm(None, vm)
         self.conn._get_ve_by_name.return_value = sdk_ve
 
         self.conn.vif_driver = mock.MagicMock()
@@ -286,7 +286,7 @@ class PCSDriverTestCase(test.TestCase):
         for cur in sdk_states:
             for req in openstack_states:
                 vm['state'] = cur
-                sdk_ve = fakeprlsdkapi.Vm(vm)
+                sdk_ve = fakeprlsdkapi.Vm(None, vm)
                 instance['power_state'] = req
                 self.conn._sync_ve_state(sdk_ve, instance)
                 msg = "%s->%s" % (sdk_states[cur], power_state.STATE_MAP[req])
@@ -306,7 +306,7 @@ class PCSDriverTestCase(test.TestCase):
         func_name = 'pcsnovadriver.pcs.template.get_template'
         with mock.patch(func_name) as get_template_mock:
             template = get_template_mock.return_value
-            sdk_ve = fakeprlsdkapi.Vm(vm_stopped)
+            sdk_ve = fakeprlsdkapi.Vm(None, vm_stopped)
             template.create_instance.return_value = sdk_ve
             instance = self._prep_instance_boot_image()
             admin_pw = 'fon234mc9pd1'
