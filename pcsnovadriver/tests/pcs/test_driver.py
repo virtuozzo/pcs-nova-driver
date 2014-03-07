@@ -167,6 +167,7 @@ class PCSDriverTestCase(test.TestCase):
         self.conn = driver.PCSDriver(fake.FakeVirtAPI(), True)
         self.conn.init_host(host='localhost')
         self.conn.psrv.test_add_vms(vms)
+        self.conn.vif_driver = mock.MagicMock()
 
         self.user_id = 'fake'
         self.project_id = 'fake'
@@ -233,8 +234,6 @@ class PCSDriverTestCase(test.TestCase):
         self.conn._get_ve_by_name = mock.MagicMock()
         sdk_ve = self.conn.psrv.test_add_vm(vm)
         self.conn._get_ve_by_name.return_value = sdk_ve
-
-        self.conn.vif_driver = mock.MagicMock()
 
         return sdk_ve
 
@@ -337,14 +336,12 @@ class PCSDriverTestCase(test.TestCase):
             template.create_instance.return_value = sdk_ve
             instance = self._prep_instance_boot_image()
             admin_pw = 'fon234mc9pd1'
-            self.conn.vif_driver = mock.MagicMock()
             self.conn.spawn(self.context, instance, None, [],
                         admin_pw, network_info_1vif, [])
 
     def test_spawn_vm_from_volume(self):
         instance = self._prep_instance_boot_volume()
         admin_pw = 'fon234mc9pd1'
-        self.conn.vif_driver = mock.MagicMock()
         self.conn.volume_driver = FakeVolumeDriver(self.conn)
 
         self.conn.spawn(self.context, instance, None, [],
@@ -366,7 +363,6 @@ class PCSDriverTestCase(test.TestCase):
         # check Vm exists
         srv.get_vm_config(instance['name'], pc.PGVC_SEARCH_BY_NAME).wait()
 
-        self.conn.vif_driver = mock.MagicMock()
         self.conn.get_disk_dev_path = mock.MagicMock()
         self.conn.volume_driver = FakeVolumeDriver(self.conn)
 
@@ -382,7 +378,6 @@ class PCSDriverTestCase(test.TestCase):
     def test_reboot_soft(self):
         instance, sdk_ve = self._prep_instance_and_vm(
                             power_state=power_state.RUNNING)
-        self.conn.vif_driver = mock.MagicMock()
 
         self.conn.reboot(self.context, instance,
                          network_info_1vif, reboot_type='SOFT')
@@ -394,7 +389,6 @@ class PCSDriverTestCase(test.TestCase):
             instance, sdk_ve = self._prep_instance_and_vm(
                                 uuid=uuidutils.generate_uuid(),
                                 power_state=state)
-            self.conn.vif_driver = mock.MagicMock()
 
             self.conn.reboot(self.context, instance,
                              network_info_1vif, reboot_type='HARD')
@@ -405,7 +399,6 @@ class PCSDriverTestCase(test.TestCase):
     def test_suspend(self):
         instance, sdk_ve = self._prep_instance_and_vm(
                                 power_state=power_state.RUNNING)
-        self.conn.vif_driver = mock.MagicMock()
 
         self.conn.suspend(instance)
 
@@ -414,7 +407,6 @@ class PCSDriverTestCase(test.TestCase):
     def test_resume(self):
         instance, sdk_ve = self._prep_instance_and_vm(
                                 power_state=power_state.SUSPENDED)
-        self.conn.vif_driver = mock.MagicMock()
 
         self.conn.resume(instance, network_info_1vif)
 
@@ -423,7 +415,6 @@ class PCSDriverTestCase(test.TestCase):
     def test_pause(self):
         instance, sdk_ve = self._prep_instance_and_vm(
                                 power_state=power_state.RUNNING)
-        self.conn.vif_driver = mock.MagicMock()
 
         self.conn.pause(instance)
 
@@ -432,7 +423,6 @@ class PCSDriverTestCase(test.TestCase):
     def test_unpause(self):
         instance, sdk_ve = self._prep_instance_and_vm(
                                 power_state=power_state.PAUSED)
-        self.conn.vif_driver = mock.MagicMock()
 
         self.conn.unpause(instance, network_info_1vif)
 
@@ -441,7 +431,6 @@ class PCSDriverTestCase(test.TestCase):
     def test_power_off(self):
         instance, sdk_ve = self._prep_instance_and_vm(
                                 power_state=power_state.RUNNING)
-        self.conn.vif_driver = mock.MagicMock()
 
         self.conn.power_off(instance)
 
@@ -450,7 +439,6 @@ class PCSDriverTestCase(test.TestCase):
     def test_power_on(self):
         instance, sdk_ve = self._prep_instance_and_vm(
                                 power_state=power_state.SHUTDOWN)
-        self.conn.vif_driver = mock.MagicMock()
 
         self.conn.power_on(self.context, instance, network_info_1vif)
 
