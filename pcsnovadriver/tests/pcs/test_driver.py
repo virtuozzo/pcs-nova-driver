@@ -138,6 +138,14 @@ vm_with_disk = {
     }
 }
 
+OPENSTACK_STATES = {
+    power_state.RUNNING: pc.VMS_RUNNING,
+    power_state.PAUSED: pc.VMS_PAUSED,
+    power_state.SHUTDOWN: pc.VMS_STOPPED,
+    power_state.CRASHED: pc.VMS_STOPPED,
+    power_state.SUSPENDED: pc.VMS_SUSPENDED,
+}
+
 
 class FakeVolumeDriver(volume.PCSBaseVolumeDriver):
     def connect_volume(self, connection_info, sdk_ve, disk_info):
@@ -291,14 +299,6 @@ class PCSDriverTestCase(test.TestCase):
                 pc.VMS_SUSPENDED: 'VMS_SUSPENDED',
             }
 
-        openstack_states = {
-                power_state.RUNNING: pc.VMS_RUNNING,
-                power_state.PAUSED: pc.VMS_PAUSED,
-                power_state.SHUTDOWN: pc.VMS_STOPPED,
-                power_state.CRASHED: pc.VMS_STOPPED,
-                power_state.SUSPENDED: pc.VMS_SUSPENDED,
-            }
-
         vm = {
                 'name': 'instance123',
                 'uuid': '{d58fe074-ce99-46b7-8ce1-83620ba26426}',
@@ -311,13 +311,13 @@ class PCSDriverTestCase(test.TestCase):
             }
 
         for cur in sdk_states:
-            for req in openstack_states:
+            for req in OPENSTACK_STATES:
                 vm['state'] = cur
                 sdk_ve = self.conn.psrv.test_add_vm(vm)
                 instance['power_state'] = req
                 self.conn._sync_ve_state(sdk_ve, instance)
                 msg = "%s->%s" % (sdk_states[cur], power_state.STATE_MAP[req])
-                self.assertEqual(sdk_ve.state, openstack_states[req], msg)
+                self.assertEqual(sdk_ve.state, OPENSTACK_STATES[req], msg)
 
     def test_unplug_vifs(self):
         vm = vm_running
@@ -350,15 +350,18 @@ class PCSDriverTestCase(test.TestCase):
         self.conn.spawn(self.context, instance, None, [],
                     admin_pw, network_info_1vif, block_device_info1)
 
-    def test_destroy(self):
-        srv = self.conn.psrv
-
-        instance = self._prep_instance_boot_volume()
-
+    def _prep_instance_and_vm(self, **kwargs):
+        instance = self._prep_instance_boot_volume(**kwargs)
         vm = vm_with_disk.copy()
         vm['uuid'] = '{%s}' % instance['uuid']
         vm['name'] = instance['name']
-        sdk_ve = srv.test_add_vm(vm)
+        vm['state'] = OPENSTACK_STATES[instance['power_state']]
+        sdk_ve = self.conn.psrv.test_add_vm(vm)
+        return instance, sdk_ve
+
+    def test_destroy(self):
+        srv = self.conn.psrv
+        instance, sdk_ve = self._prep_instance_and_vm()
 
         # check Vm exists
         srv.get_vm_config(instance['name'], pc.PGVC_SEARCH_BY_NAME).wait()
@@ -375,3 +378,80 @@ class PCSDriverTestCase(test.TestCase):
     def test_destroy_unexistent(self):
         instance = self._prep_instance_boot_image()
         self.conn.destroy(instance, network_info_1vif, None)
+
+    def test_reboot_soft(self):
+        instance, sdk_ve = self._prep_instance_and_vm(
+                            power_state=power_state.RUNNING)
+        self.conn.vif_driver = mock.MagicMock()
+
+        self.conn.reboot(self.context, instance,
+                         network_info_1vif, reboot_type='SOFT')
+
+        self.assertEqual(sdk_ve.state, pc.VMS_RUNNING)
+
+    def test_reboot_hard(self):
+        for state in OPENSTACK_STATES:
+            instance, sdk_ve = self._prep_instance_and_vm(
+                                uuid=uuidutils.generate_uuid(),
+                                power_state=state)
+            self.conn.vif_driver = mock.MagicMock()
+
+            self.conn.reboot(self.context, instance,
+                             network_info_1vif, reboot_type='HARD')
+
+            msg = "state=%s" % (power_state.STATE_MAP[state])
+            self.assertEqual(sdk_ve.state, pc.VMS_RUNNING, msg)
+
+    def test_suspend(self):
+        instance, sdk_ve = self._prep_instance_and_vm(
+                                power_state=power_state.RUNNING)
+        self.conn.vif_driver = mock.MagicMock()
+
+        self.conn.suspend(instance)
+
+        self.assertEqual(sdk_ve.state, pc.VMS_SUSPENDED)
+
+    def test_resume(self):
+        instance, sdk_ve = self._prep_instance_and_vm(
+                                power_state=power_state.SUSPENDED)
+        self.conn.vif_driver = mock.MagicMock()
+
+        self.conn.resume(instance, network_info_1vif)
+
+        self.assertEqual(sdk_ve.state, pc.VMS_RUNNING)
+
+    def test_pause(self):
+        instance, sdk_ve = self._prep_instance_and_vm(
+                                power_state=power_state.RUNNING)
+        self.conn.vif_driver = mock.MagicMock()
+
+        self.conn.pause(instance)
+
+        self.assertEqual(sdk_ve.state, pc.VMS_PAUSED)
+
+    def test_unpause(self):
+        instance, sdk_ve = self._prep_instance_and_vm(
+                                power_state=power_state.PAUSED)
+        self.conn.vif_driver = mock.MagicMock()
+
+        self.conn.unpause(instance, network_info_1vif)
+
+        self.assertEqual(sdk_ve.state, pc.VMS_RUNNING)
+
+    def test_power_off(self):
+        instance, sdk_ve = self._prep_instance_and_vm(
+                                power_state=power_state.RUNNING)
+        self.conn.vif_driver = mock.MagicMock()
+
+        self.conn.power_off(instance)
+
+        self.assertEqual(sdk_ve.state, pc.VMS_STOPPED)
+
+    def test_power_on(self):
+        instance, sdk_ve = self._prep_instance_and_vm(
+                                power_state=power_state.SHUTDOWN)
+        self.conn.vif_driver = mock.MagicMock()
+
+        self.conn.power_on(self.context, instance, network_info_1vif)
+
+        self.assertEqual(sdk_ve.state, pc.VMS_RUNNING)

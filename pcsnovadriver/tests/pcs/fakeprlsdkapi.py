@@ -285,7 +285,7 @@ class Vm(object):
             return Job(error=err)
 
     def resume(self):
-        if self.state == consts.VMS_SUSPENDED:
+        if self.state in [consts.VMS_SUSPENDED, consts.VMS_PAUSED]:
             tmp = self.prev_state
             if not tmp:
                 tmp = consts.VMS_RUNNING
@@ -294,6 +294,14 @@ class Vm(object):
             return Job()
         else:
             err = PrlSDKError(errors.PRL_ERR_DISP_VM_IS_NOT_STOPPED)
+            return Job(error=err)
+
+    def restart(self):
+        if self.state == consts.VMS_RUNNING:
+            self.prev_state = self.state
+            return Job()
+        else:
+            err = PrlSDKError(errors.PRL_ERR_DISP_VM_IS_NOT_STARTED)
             return Job(error=err)
 
     def get_state(self):
