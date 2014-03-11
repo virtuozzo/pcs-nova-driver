@@ -56,11 +56,12 @@ def compress_ploop(src, dst):
         raise Exception(msg)
 
 
-def uncompress_ploop(src, dst, root_helper=""):
+def uncompress_ploop(src_path, dst_path, src_file=None, root_helper=""):
     cmd1 = ['prlcompress', '-u']
-    cmd2 = shlex.split(root_helper) + ['tar', 'x', '-C', dst]
+    cmd2 = shlex.split(root_helper) + ['tar', 'x', '-C', dst_path]
 
-    src_file = open(src)
+    if src_file is None:
+        src_file = open(src_path)
     try:
         p1 = subprocess.Popen(cmd1, stdin=src_file, stdout=subprocess.PIPE)
     finally:
