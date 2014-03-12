@@ -40,12 +40,8 @@ CONF = cfg.CONF
 def get_template(driver, context, instance, image_meta):
         if image_meta['disk_format'] == 'ez-template':
             return EzTemplate(driver, context, instance, image_meta)
-        elif image_meta['disk_format'] == 'ploop':
-            return PloopTemplate(driver, context, instance, image_meta)
-        elif image_meta['disk_format'] == 'cploop':
-            return LZRWTemplate(driver, context, instance, image_meta)
         else:
-            return QemuTemplate(driver, context, instance, image_meta)
+            return LZRWCacheTemplate(driver, context, instance, image_meta)
 
 
 class PCSTemplate(object):
@@ -171,6 +167,7 @@ class DiskCacheTemplate(PCSTemplate):
     def __init__(self, driver, context, instance, image_meta):
         PCSTemplate.__init__(self, driver, context, instance, image_meta)
         self.driver = driver
+        self.context = context
         self.instance = instance
         self.image_meta = image_meta
 
@@ -238,7 +235,7 @@ class DiskCacheTemplate(PCSTemplate):
             raise Exception("Unsupported VM mode '%s'" % props['vm_mode'])
 
         if not self._is_image_cached():
-            self._cache_image(context)
+            self._cache_image()
 
         if not 'vm_mode' in props or props['vm_mode'] == 'hvm':
             return self._create_vm()
@@ -263,8 +260,25 @@ class LZRWCacheTemplate(DiskCacheTemplate):
         pcsutils.uncompress_ploop(self._get_cached_file(), dst,
                                   root_helper=utils.get_root_helper())
 
+    def _cache_image(self):
+        downloader = get_downloader(self.image_meta['disk_format'])
+        LOG.info('Downloading image %s (%s) from glance' %
+                 (self.image_meta['name'], self.instance['image_ref']))
+        downloader.fetch_to_lzrw(self.context, self.instance['image_ref'],
+                                 self.image_meta, self._get_cached_file())
 
-class PloopTemplate(LZRWCacheTemplate):
+
+class ImageDownloader(object):
+    """Subclasses of this class download images from glance
+    to local image cache with all needed conversions.
+    """
+
+    def fetch_to_lzrw(self, context, image_ref, image_meta, dst):
+        raise NotImplementedError()
+
+
+class PloopDownloader(ImageDownloader):
+    "Dowload images in ploop format."
 
     def _get_image_name(self, disk_descriptor):
         doc = minidom.parseString(disk_descriptor)
@@ -296,41 +310,40 @@ class PloopTemplate(LZRWCacheTemplate):
 
         return text.nodeValue
 
-    def _download_ploop(self, context, image_service, dst):
-        LOG.info("Downloading image to %s ..." % dst)
-        dd = self.image_meta['properties']['pcs_disk_descriptor']
+    def _download_ploop(self, context, image_ref,
+                        image_meta, image_service, dst):
+        dd = image_meta['properties']['pcs_disk_descriptor']
         image_name = self._get_image_name(dd)
         with open(os.path.join(dst, image_name), 'w') as f:
-            image_service.download(context, self.instance['image_ref'], f)
+            image_service.download(context, image_ref, f)
         with open(os.path.join(dst, 'DiskDescriptor.xml'), 'w') as f:
-            f.write(self.image_meta['properties']['pcs_disk_descriptor'])
+            f.write(image_meta['properties']['pcs_disk_descriptor'])
 
-    def _cache_image(self, context):
-        tmpl_dir = os.path.join(CONF.pcs_template_dir, self.image_meta['id'])
-        tmpl_file = self._get_cached_file()
+    def fetch_to_lzrw(self, context, image_ref, image_meta, dst):
+        tmpl_dir = os.path.join(CONF.pcs_template_dir, image_meta['id'])
 
         if os.path.exists(tmpl_dir):
             shutil.rmtree(tmpl_dir)
         os.mkdir(tmpl_dir)
 
-        image_service = glance.get_remote_image_service(context,
-                                        self.instance['image_ref'])[0]
-        self._download_ploop(context, image_service, tmpl_dir)
-        LOG.info("Packing image to %s" % tmpl_file)
-        pcsutils.compress_ploop(tmpl_dir, tmpl_file)
+        image_service = glance.get_remote_image_service(context, image_ref)[0]
+        self._download_ploop(context, image_ref, image_meta,
+                             image_service, tmpl_dir)
+        LOG.info("Packing image to %s" % dst)
+        pcsutils.compress_ploop(tmpl_dir, dst)
         shutil.rmtree(tmpl_dir)
 
 
-class QemuTemplate(PloopTemplate):
-    """This class creates instances from images in formats,
-    which qemu-img supports.
+class QemuDownloader(PloopDownloader):
+    """This class downloads images in formats, which
+    qemu-img supports.
     """
-    def _download_ploop(self, context, image_service, dst):
+    def _download_ploop(self, context, image_ref,
+                        image_meta, image_service, dst):
         glance_img = 'glance.img'
         glance_path = os.path.join(dst, glance_img)
-        LOG.info("Download image from glance ...")
         with open(glance_path, 'w') as f:
-            image_service.download(context, self.instance['image_ref'], f)
+            image_service.download(context, image_ref, f)
 
         out, err = utils.execute('qemu-img', 'info',
                                  '--output=json', glance_path)
@@ -358,12 +371,19 @@ class QemuTemplate(PloopTemplate):
             os.unlink(glance_path)
 
 
-class LZRWTemplate(LZRWCacheTemplate):
+class LZRWDownloader(ImageDownloader):
     "Class for images stored in cploop format."
 
-    def _cache_image(self, context):
-        LOG.info("Download image from glance ...")
-        image_service = glance.get_remote_image_service(context,
-                                        self.instance['image_ref'])[0]
-        with open(self._get_cached_file(), 'w') as f:
-            image_service.download(context, self.instance['image_ref'], f)
+    def fetch_to_lzrw(self, context, image_ref, image_meta, dst):
+        image_service = glance.get_remote_image_service(context, image_ref)[0]
+        with open(dst, 'w') as f:
+            image_service.download(context, image_ref, f)
+
+
+def get_downloader(disk_format):
+    if disk_format == 'ploop':
+        return PloopDownloader()
+    elif disk_format == 'cploop':
+        return LZRWDownloader()
+    else:
+        return QemuDownloader()
