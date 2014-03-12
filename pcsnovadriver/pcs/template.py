@@ -174,9 +174,6 @@ class DiskCacheTemplate(PCSTemplate):
         self.instance = instance
         self.image_meta = image_meta
 
-        if not self._is_image_cached():
-            self._cache_image(context)
-
     def _is_image_cached(self):
         "Returns True, if image with given id cached."
 
@@ -237,12 +234,16 @@ class DiskCacheTemplate(PCSTemplate):
 
     def create_instance(self):
         props = self.image_meta['properties']
+        if 'vm_mode' in props and props['vm_mode'] not in ['hvm', 'exe']:
+            raise Exception("Unsupported VM mode '%s'" % props['vm_mode'])
+
+        if not self._is_image_cached():
+            self._cache_image(context)
+
         if not 'vm_mode' in props or props['vm_mode'] == 'hvm':
             return self._create_vm()
         elif props['vm_mode'] == 'exe':
             return self._create_ct()
-        else:
-            raise Exception("Unsupported VM mode '%s'" % props['vm_mode'])
 
 
 class LZRWCacheTemplate(DiskCacheTemplate):
