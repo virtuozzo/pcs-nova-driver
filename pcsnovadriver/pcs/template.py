@@ -37,27 +37,19 @@ LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
 
 
-def get_template(driver, context, image_ref, user_id, project_id):
-        (image_service, image_id) = \
-            glance.get_remote_image_service(context, image_ref)
-        image_info = image_service.show(context, image_ref)
-
-        if image_info['disk_format'] == 'ez-template':
-            return EzTemplate(driver, context,
-                              image_ref, user_id, project_id)
-        elif image_info['disk_format'] == 'ploop':
-            return PloopTemplate(driver, context,
-                                 image_ref, user_id, project_id)
-        elif image_info['disk_format'] == 'cploop':
-            return LZRWTemplate(driver, context,
-                                image_ref, user_id, project_id)
+def get_template(driver, context, instance, image_meta):
+        if image_meta['disk_format'] == 'ez-template':
+            return EzTemplate(driver, context, instance, image_meta)
+        elif image_meta['disk_format'] == 'ploop':
+            return PloopTemplate(driver, context, instance, image_meta)
+        elif image_meta['disk_format'] == 'cploop':
+            return LZRWTemplate(driver, context, instance, image_meta)
         else:
-            return QemuTemplate(driver, context,
-                                image_ref, user_id, project_id)
+            return QemuTemplate(driver, context, instance, image_meta)
 
 
 class PCSTemplate(object):
-    def __init__(self, driver, context, image_ref, user_id, project_id):
+    def __init__(self, driver, context, instance, image_meta):
         LOG.info("%s.__init__" % self.__class__.__name__)
 
     def create_instance(self, instance):
@@ -65,27 +57,20 @@ class PCSTemplate(object):
 
 
 class EzTemplate(PCSTemplate):
-    def __init__(self, driver, context, image_ref, user_id, project_id):
-        PCSTemplate.__init__(self, driver, context,
-                             image_ref, user_id, project_id)
-        self.user_id = user_id
-        self.project_id = project_id
+    def __init__(self, driver, context, instance, image_meta):
+        PCSTemplate.__init__(self, driver, context, instance, image_meta)
+        self.driver = driver
         self.rpm_path = None
+        self.instance = instance
 
-        # get image information from glance
-        (image_service, image_id) = \
-            glance.get_remote_image_service(context, image_ref)
-        image_info = image_service.show(context, image_ref)
-
-        name, version, release = self._get_remote_info(context,
-                                            image_ref, image_info)
+        name, version, release = self._get_remote_info(context, image_meta)
         lname, lversion, lrelease = self._get_rpm_info(pkg=name)
         LOG.info("Glance template: %s-%s-%s, local rpm: %s-%s-%s" %
                 (name, version, release, lname, lversion, lrelease))
         self.name = name[:-3]
 
         if not lname:
-            self._download_rpm(context, image_ref, image_info)
+            self._download_rpm(context, image_meta)
             LOG.info("installing rpm for template %s" % name)
             utils.execute('rpm', '-i', self.rpm_path, run_as_root=True)
         else:
@@ -93,42 +78,42 @@ class EzTemplate(PCSTemplate):
             if x == 0:
                 return
             elif x < 0:
-                self._download_rpm(context, image_ref, image_info)
+                self._download_rpm(context, image_meta)
                 LOG.info("updating rpm for template %s" % name)
                 utils.execute('rpm', '-U', file, run_as_root=True)
             else:
                 LOG.warn("local rpm is newer than remote one!")
 
-    def _download_rpm(self, context, image_ref, image_info):
+    def _download_rpm(self, context, image_meta):
         LOG.info("_download_rpm")
         if self.rpm_path:
             return
 
-        if image_info['name']:
-            name = image_info['name']
+        if image_meta['name']:
+            name = image_meta['name']
         else:
-            name = image_info['id']
+            name = image_meta['id']
 
         if CONF.tempdir:
             tempdir = CONF.tempdir
         else:
             tempdir = tempfile.gettempdir()
         rpm_path = os.path.join(tempdir, name)
-        images.fetch(context, image_ref, rpm_path,
-                self.user_id, self.project_id)
+        images.fetch(context, self.instance['image_ref'], rpm_path,
+                self.instance['user_id'], self.instance['project_id'])
         self.rpm_path = rpm_path
 
-    def _get_remote_info(self, context, image_ref, image_info):
+    def _get_remote_info(self, context, image_meta):
         LOG.info("_get_remote_info")
         for prop in 'pcs_name', 'pcs_version', 'pcs_release':
-            if prop not in image_info['properties']:
-                self._download_rpm(context, image_ref, image_info)
+            if prop not in image_meta['properties']:
+                self._download_rpm(context, image_meta)
                 name, ver, rel = self._get_rpm_info(file=self.rpm_path)
                 if not name:
                     raise Exception("Invalid rpm file: %s" % self.rpm_path)
-        return (image_info['properties']['pcs_name'],
-                image_info['properties']['pcs_version'],
-                image_info['properties']['pcs_release'])
+        return (image_meta['properties']['pcs_name'],
+                image_meta['properties']['pcs_version'],
+                image_meta['properties']['pcs_release'])
 
     def _get_rpm_info(self, file=None, pkg=None):
         LOG.info("_get_rpm_info")
@@ -169,10 +154,10 @@ class EzTemplate(PCSTemplate):
             return self._cmp_version(rel1, rel2)
 
     def create_instance(self, psrv, instance):
-        sdk_ve = psrv.get_default_vm_config(pc.PVT_CT,
+        sdk_ve = self.driver.psrv.get_default_vm_config(pc.PVT_CT,
                                             'vswap.1024MB', 0, 0).wait()[0]
-        sdk_ve.set_uuid(instance['uuid'])
-        sdk_ve.set_name(instance['name'])
+        sdk_ve.set_uuid(self.instance['uuid'])
+        sdk_ve.set_name(self.instance['name'])
         sdk_ve.set_vm_type(pc.PVT_CT)
         sdk_ve.set_os_template(self.name)
         sdk_ve.reg('', True).wait()
@@ -183,27 +168,21 @@ class DiskCacheTemplate(PCSTemplate):
     """This class is for templates, based on disk images,
     stored in glance.
     """
-    def __init__(self, driver, context, image_ref, user_id, project_id):
-        PCSTemplate.__init__(self, driver, context,
-                             image_ref, user_id, project_id)
-        self.user_id = user_id
-        self.project_id = project_id
+    def __init__(self, driver, context, instance, image_meta):
+        PCSTemplate.__init__(self, driver, context, instance, image_meta)
         self.driver = driver
-
-        (image_service, image_id) = \
-            glance.get_remote_image_service(context, image_ref)
-        self.image_info = image_service.show(context, image_ref)
-        self.image_id = image_id
+        self.instance = instance
+        self.image_meta = image_meta
 
         if not self._is_image_cached():
-            self._cache_image(context, image_service)
+            self._cache_image(context)
 
     def _is_image_cached(self):
         "Returns True, if image with given id cached."
 
         raise NotImplementedError()
 
-    def _cache_image(self, context, image_service):
+    def _cache_image(self, context):
         "Cache image from glance to local FS."
 
         raise NotImplementedError()
@@ -213,13 +192,13 @@ class DiskCacheTemplate(PCSTemplate):
 
         raise NotImplementedError()
 
-    def _create_ct(self, psrv, instance):
-        sdk_ve = psrv.get_default_vm_config(pc.PVT_CT,
+    def _create_ct(self):
+        sdk_ve = self.driver.psrv.get_default_vm_config(pc.PVT_CT,
                                             'vswap.1024MB', 0, 0).wait()[0]
-        sdk_ve.set_uuid(instance['uuid'])
-        sdk_ve.set_name(instance['name'])
+        sdk_ve.set_uuid(self.instance['uuid'])
+        sdk_ve.set_name(self.instance['name'])
         sdk_ve.set_vm_type(pc.PVT_CT)
-        sdk_ve.set_os_template(self.image_info['properties']['pcs_ostemplate'])
+        sdk_ve.set_os_template(self.image_meta['properties']['pcs_ostemplate'])
         LOG.info("Creating container from eztemplate ...")
         sdk_ve.reg('', True).wait()
 
@@ -231,8 +210,8 @@ class DiskCacheTemplate(PCSTemplate):
         LOG.info("Done")
         return sdk_ve
 
-    def _create_vm(self, psrv, instance):
-        sdk_ve = self.driver._create_blank_vm(instance)
+    def _create_vm(self):
+        sdk_ve = self.driver._create_blank_vm(self.instance)
 
         # copy hard disk to VM directory
         ve_path = os.path.dirname(sdk_ve.get_home_path())
@@ -240,7 +219,7 @@ class DiskCacheTemplate(PCSTemplate):
         self._put_image(disk_path)
 
         # add hard disk to VM config and set is as boot device
-        srv_cfg = psrv.get_srv_config().wait().get_param()
+        srv_cfg = self.driver.psrv.get_srv_config().wait().get_param()
         sdk_ve.begin_edit().wait()
 
         hdd = sdk_ve.add_default_device_ex(srv_cfg, pc.PDE_HARD_DISK)
@@ -256,12 +235,12 @@ class DiskCacheTemplate(PCSTemplate):
 
         return sdk_ve
 
-    def create_instance(self, psrv, instance):
-        props = self.image_info['properties']
+    def create_instance(self):
+        props = self.image_meta['properties']
         if not 'vm_mode' in props or props['vm_mode'] == 'hvm':
-            return self._create_vm(psrv, instance)
+            return self._create_vm()
         elif props['vm_mode'] == 'exe':
-            return self._create_ct(psrv, instance)
+            return self._create_ct()
         else:
             raise Exception("Unsupported VM mode '%s'" % props['vm_mode'])
 
@@ -272,7 +251,7 @@ class LZRWCacheTemplate(DiskCacheTemplate):
     """
     def _get_cached_file(self):
         return os.path.join(CONF.pcs_template_dir,
-                            self.image_id + '.tar.lzrw')
+                            self.image_meta['id'] + '.tar.lzrw')
 
     def _is_image_cached(self):
         return os.path.exists(self._get_cached_file())
@@ -318,21 +297,23 @@ class PloopTemplate(LZRWCacheTemplate):
 
     def _download_ploop(self, context, image_service, dst):
         LOG.info("Downloading image to %s ..." % dst)
-        dd = self.image_info['properties']['pcs_disk_descriptor']
+        dd = self.image_meta['properties']['pcs_disk_descriptor']
         image_name = self._get_image_name(dd)
         with open(os.path.join(dst, image_name), 'w') as f:
-            image_service.download(context, self.image_id, f)
+            image_service.download(context, self.instance['image_ref'], f)
         with open(os.path.join(dst, 'DiskDescriptor.xml'), 'w') as f:
-            f.write(self.image_info['properties']['pcs_disk_descriptor'])
+            f.write(self.image_meta['properties']['pcs_disk_descriptor'])
 
-    def _cache_image(self, context, image_service):
-        tmpl_dir = os.path.join(CONF.pcs_template_dir, self.image_id)
+    def _cache_image(self, context):
+        tmpl_dir = os.path.join(CONF.pcs_template_dir, self.image_meta['id'])
         tmpl_file = self._get_cached_file()
 
         if os.path.exists(tmpl_dir):
             shutil.rmtree(tmpl_dir)
         os.mkdir(tmpl_dir)
 
+        image_service = glance.get_remote_image_service(context,
+                                        self.instance['image_ref'])[0]
         self._download_ploop(context, image_service, tmpl_dir)
         LOG.info("Packing image to %s" % tmpl_file)
         pcsutils.compress_ploop(tmpl_dir, tmpl_file)
@@ -348,7 +329,7 @@ class QemuTemplate(PloopTemplate):
         glance_path = os.path.join(dst, glance_img)
         LOG.info("Download image from glance ...")
         with open(glance_path, 'w') as f:
-            image_service.download(context, self.image_id, f)
+            image_service.download(context, self.instance['image_ref'], f)
 
         out, err = utils.execute('qemu-img', 'info',
                                  '--output=json', glance_path)
@@ -379,7 +360,9 @@ class QemuTemplate(PloopTemplate):
 class LZRWTemplate(LZRWCacheTemplate):
     "Class for images stored in cploop format."
 
-    def _cache_image(self, context, image_service):
+    def _cache_image(self, context):
         LOG.info("Download image from glance ...")
+        image_service = glance.get_remote_image_service(context,
+                                        self.instance['image_ref'])[0]
         with open(self._get_cached_file(), 'w') as f:
-            image_service.download(context, self.image_id, f)
+            image_service.download(context, self.instance['image_ref'], f)

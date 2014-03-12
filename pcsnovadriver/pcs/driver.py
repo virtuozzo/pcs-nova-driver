@@ -442,9 +442,8 @@ class PCSDriver(driver.ComputeDriver):
         LOG.info("spawn: %s" % instance['name'])
 
         if instance['image_ref']:
-            tmpl = template.get_template(self, context, instance['image_ref'],
-                            instance['user_id'], instance['project_id'])
-            sdk_ve = tmpl.create_instance(self.psrv, instance)
+            tmpl = template.get_template(self, context, instance, image_meta)
+            sdk_ve = tmpl.create_instance()
         else:
             sdk_ve = self._create_blank_vm(instance)
 
