@@ -350,7 +350,28 @@ class ImageDownloader(object):
         raise NotImplementedError()
 
 
-class PloopDownloader(ImageDownloader):
+class BasePloopDownloader(ImageDownloader):
+
+    def _download_ploop(self, context, image_ref,
+                        image_meta, image_service, dst):
+        raise NotImplementedError()
+
+    def fetch_to_lzrw(self, context, image_ref, image_meta, dst):
+        tmpl_dir = os.path.join(CONF.pcs_template_dir, image_meta['id'])
+
+        if os.path.exists(tmpl_dir):
+            shutil.rmtree(tmpl_dir)
+        os.mkdir(tmpl_dir)
+
+        image_service = glance.get_remote_image_service(context, image_ref)[0]
+        self._download_ploop(context, image_ref, image_meta,
+                             image_service, tmpl_dir)
+        LOG.info("Packing image to %s" % dst)
+        pcsutils.compress_ploop(tmpl_dir, dst)
+        shutil.rmtree(tmpl_dir)
+
+
+class PloopDownloader(BasePloopDownloader):
     "Dowload images in ploop format."
 
     def _get_image_name(self, disk_descriptor):
@@ -392,22 +413,8 @@ class PloopDownloader(ImageDownloader):
         with open(os.path.join(dst, 'DiskDescriptor.xml'), 'w') as f:
             f.write(image_meta['properties']['pcs_disk_descriptor'])
 
-    def fetch_to_lzrw(self, context, image_ref, image_meta, dst):
-        tmpl_dir = os.path.join(CONF.pcs_template_dir, image_meta['id'])
 
-        if os.path.exists(tmpl_dir):
-            shutil.rmtree(tmpl_dir)
-        os.mkdir(tmpl_dir)
-
-        image_service = glance.get_remote_image_service(context, image_ref)[0]
-        self._download_ploop(context, image_ref, image_meta,
-                             image_service, tmpl_dir)
-        LOG.info("Packing image to %s" % dst)
-        pcsutils.compress_ploop(tmpl_dir, dst)
-        shutil.rmtree(tmpl_dir)
-
-
-class QemuDownloader(PloopDownloader):
+class QemuDownloader(BasePloopDownloader):
     """This class downloads images in formats, which
     qemu-img supports.
     """
