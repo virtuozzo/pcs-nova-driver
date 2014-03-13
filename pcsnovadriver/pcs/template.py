@@ -23,6 +23,7 @@ from oslo.config import cfg
 
 from nova.image import glance
 from nova.openstack.common import jsonutils
+from nova.openstack.common import lockutils
 from nova.openstack.common import log as logging
 from nova.openstack.common import processutils
 from nova import utils
@@ -258,32 +259,86 @@ class CachedImage(object):
 
 class LZRWCachedImage(CachedImage):
     """Class for retrieving from cache of LZRW images.
+
+    There are 3 actions on cached image:
+    1. cache
+    2. unpack
+    3. remove (will be done in ImageCacheManager later)
+
+    So we need to synchronize these places. All these actions
+    can be executed from separate threads.
+
+    The idea is that since cache images are regular files, we
+    can open file and unpack using that fd. So removing cached
+    image while unpacking it will not fail.
+
+    Several unpacks can work simultaneously, because they just
+    read file contents.
+
+    To forbid unpacking image while caching it it's cached to the
+    temporary file and then first opened and then renamed. So
+    if cached file exists - it can be unpacked. If doesn't exists
+    it has to be cached.
+
+    Several caching operation protected by lock. So if we got lock
+    then ether file is not cached and nobody will try to cache it
+    until we release lock or someone already cached file before us.
+    In this case we just open a file and release lock.
+
+    Several remove operations can be a problem. We need to check if
+    manage_image_cache can be called from several threads
+    simultaneously.
     """
     def _get_cached_file(self, image_id):
         return os.path.join(CONF.pcs_template_dir,
                             image_id + '.tar.lzrw')
 
-    def _is_image_cached(self, image_id):
-        return os.path.exists(self._get_cached_file(image_id))
-
-    def put_image(self, context, image_ref, image_meta, dst):
-        image_id = image_meta['id']
-
-        if not self._is_image_cached(image_id):
-            self._cache_image(context, image_ref, image_meta)
-
-        utils.execute('mkdir', dst, run_as_root=True)
-        LOG.info("Unpacking image %s to %s" %
-                    (self._get_cached_file(image_id), dst))
-        pcsutils.uncompress_ploop(self._get_cached_file(image_id), dst,
-                                    root_helper=utils.get_root_helper())
-
-    def _cache_image(self, context, image_ref, image_meta):
+    def _cache_image(self, context, image_ref, image_meta, dst):
         downloader = get_downloader(image_meta['disk_format'])
         LOG.info('Downloading image %s (%s) from glance' %
                  (image_meta['name'], image_ref))
-        downloader.fetch_to_lzrw(context, image_ref, image_meta,
-                                 self._get_cached_file(image_meta['id']))
+        downloader.fetch_to_lzrw(context, image_ref, image_meta, dst)
+
+    def _open(self, path):
+        try:
+            f = open(path)
+            return f
+        except IOError as e:
+            if e.errno != os.errno.ENOENT:
+                raise
+            return None
+
+    def _open_cached_file(self, context, image_ref, image_meta, dst):
+        image_id = image_meta['id']
+        fpath = self._get_cached_file(image_id)
+
+        f = self._open(fpath)
+        if f:
+            return f
+
+        with lockutils.lock('lock' + image_id, external=True,
+                    lock_path=CONF.pcs_template_dir):
+            f = self._open(fpath)
+            if f:
+                return f
+
+            tmp = tempfile.mktemp(dir=CONF.pcs_template_dir)
+            self._cache_image(context, image_ref, image_meta, tmp)
+            f = open(tmp)
+            os.rename(tmp, fpath)
+            return f
+
+    def put_image(self, context, image_ref, image_meta, dst):
+        utils.execute('mkdir', dst, run_as_root=True)
+
+        f = self._open_cached_file(context, image_ref, image_meta, dst)
+        try:
+            LOG.info("Unpacking image %s to %s" %
+                    (self._get_cached_file(image_meta['id']), dst))
+            pcsutils.uncompress_ploop(None, dst, src_file=f,
+                                  root_helper=utils.get_root_helper())
+        finally:
+            f.close()
 
 
 class ImageDownloader(object):
