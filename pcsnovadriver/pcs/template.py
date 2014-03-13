@@ -41,7 +41,7 @@ def get_template(driver, context, instance, image_meta):
         if image_meta['disk_format'] == 'ez-template':
             return EzTemplate(driver, context, instance, image_meta)
         else:
-            return LZRWCacheTemplate(driver, context, instance, image_meta)
+            return DiskTemplate(driver, context, instance, image_meta)
 
 
 class PCSTemplate(object):
@@ -160,7 +160,7 @@ class EzTemplate(PCSTemplate):
         return sdk_ve
 
 
-class DiskCacheTemplate(PCSTemplate):
+class DiskTemplate(PCSTemplate):
     """This class is for templates, based on disk images,
     stored in glance.
     """
@@ -200,7 +200,11 @@ class DiskCacheTemplate(PCSTemplate):
         disk_path = os.path.join(disk_path, 'root.hdd')
         LOG.info("Removing original disk ...")
         utils.execute('rm', '-rf', disk_path, run_as_root=True)
-        self._put_image(disk_path)
+
+        image = LZRWCachedImage()
+        image.put_image(self.context, self.instance['image_ref'],
+                        self.image_meta, disk_path)
+
         LOG.info("Done")
         return sdk_ve
 
@@ -210,7 +214,10 @@ class DiskCacheTemplate(PCSTemplate):
         # copy hard disk to VM directory
         ve_path = os.path.dirname(sdk_ve.get_home_path())
         disk_path = os.path.join(ve_path, "harddisk.hdd")
-        self._put_image(disk_path)
+
+        image = LZRWCachedImage()
+        image.put_image(self.context, self.instance['image_ref'],
+                        self.image_meta, disk_path)
 
         # add hard disk to VM config and set is as boot device
         srv_cfg = self.driver.psrv.get_srv_config().wait().get_param()
@@ -234,38 +241,49 @@ class DiskCacheTemplate(PCSTemplate):
         if 'vm_mode' in props and props['vm_mode'] not in ['hvm', 'exe']:
             raise Exception("Unsupported VM mode '%s'" % props['vm_mode'])
 
-        if not self._is_image_cached():
-            self._cache_image()
-
         if not 'vm_mode' in props or props['vm_mode'] == 'hvm':
             return self._create_vm()
         elif props['vm_mode'] == 'exe':
             return self._create_ct()
 
 
-class LZRWCacheTemplate(DiskCacheTemplate):
-    """Class for templates, cached in form of ploop
-    images, compressed with LZRW.
+class CachedImage(object):
+    """Base class for image cache handlers. There is only one
+    operation: put image to the specified destination. If image
+    is not in cache - it should be downloaded.
     """
-    def _get_cached_file(self):
+    def put_image(self, context, image_ref, image_meta, dst):
+        raise NotImplementedError()
+
+
+class LZRWCachedImage(CachedImage):
+    """Class for retrieving from cache of LZRW images.
+    """
+    def _get_cached_file(self, image_id):
         return os.path.join(CONF.pcs_template_dir,
-                            self.image_meta['id'] + '.tar.lzrw')
+                            image_id + '.tar.lzrw')
 
-    def _is_image_cached(self):
-        return os.path.exists(self._get_cached_file())
+    def _is_image_cached(self, image_id):
+        return os.path.exists(self._get_cached_file(image_id))
 
-    def _put_image(self, dst):
+    def put_image(self, context, image_ref, image_meta, dst):
+        image_id = image_meta['id']
+
+        if not self._is_image_cached(image_id):
+            self._cache_image(context, image_ref, image_meta)
+
         utils.execute('mkdir', dst, run_as_root=True)
-        LOG.info("Unpacking image %s to %s" % (self._get_cached_file(), dst))
-        pcsutils.uncompress_ploop(self._get_cached_file(), dst,
-                                  root_helper=utils.get_root_helper())
+        LOG.info("Unpacking image %s to %s" %
+                    (self._get_cached_file(image_id), dst))
+        pcsutils.uncompress_ploop(self._get_cached_file(image_id), dst,
+                                    root_helper=utils.get_root_helper())
 
-    def _cache_image(self):
-        downloader = get_downloader(self.image_meta['disk_format'])
+    def _cache_image(self, context, image_ref, image_meta):
+        downloader = get_downloader(image_meta['disk_format'])
         LOG.info('Downloading image %s (%s) from glance' %
-                 (self.image_meta['name'], self.instance['image_ref']))
-        downloader.fetch_to_lzrw(self.context, self.instance['image_ref'],
-                                 self.image_meta, self._get_cached_file())
+                 (image_meta['name'], image_ref))
+        downloader.fetch_to_lzrw(context, image_ref, image_meta,
+                                 self._get_cached_file(image_meta['id']))
 
 
 class ImageDownloader(object):
