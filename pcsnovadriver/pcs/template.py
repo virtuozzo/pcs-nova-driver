@@ -290,7 +290,7 @@ class LZRWCachedImage(CachedImage):
     simultaneously.
     """
     def _get_cached_file(self, image_id):
-        return os.path.join(CONF.pcs_template_dir,
+        return os.path.join(CONF.pcs_template_dir, 'images',
                             image_id + '.tar.lzrw')
 
     def _cache_image(self, context, image_ref, image_meta, dst):
@@ -316,13 +316,14 @@ class LZRWCachedImage(CachedImage):
         if f:
             return f
 
-        with lockutils.lock('lock' + image_id, external=True,
-                    lock_path=CONF.pcs_template_dir):
+        lock_path = os.path.join(CONF.pcs_template_dir, 'locks')
+        with lockutils.lock(image_id, external=True, lock_path=lock_path):
             f = self._open(fpath)
             if f:
                 return f
 
-            tmp = tempfile.mktemp(dir=CONF.pcs_template_dir)
+            temp_dir = os.path.join(CONF.pcs_template_dir, 'tmp')
+            tmp = tempfile.mktemp(dir=temp_dir)
             self._cache_image(context, image_ref, image_meta, tmp)
             f = open(tmp)
             os.rename(tmp, fpath)
@@ -357,7 +358,8 @@ class BasePloopDownloader(ImageDownloader):
         raise NotImplementedError()
 
     def fetch_to_lzrw(self, context, image_ref, image_meta, dst):
-        tmpl_dir = os.path.join(CONF.pcs_template_dir, image_meta['id'])
+        tmpl_dir = os.path.join(CONF.pcs_template_dir,
+                                'tmp', image_meta['id'])
 
         if os.path.exists(tmpl_dir):
             shutil.rmtree(tmpl_dir)
