@@ -288,8 +288,10 @@ class LZRWImageCache(ImageCache):
             if not os.path.exists(d):
                 os.mkdir(d)
 
+        self.name_suffix = '.tar.lzrw'
+
     def _get_cached_file(self, image_id):
-        return os.path.join(self.images_dir, image_id + '.tar.lzrw')
+        return os.path.join(self.images_dir, image_id + self.name_suffix)
 
     def _cache_image(self, context, image_ref, image_meta, dst):
         downloader = get_downloader(image_meta['disk_format'])
@@ -336,6 +338,14 @@ class LZRWImageCache(ImageCache):
                                   root_helper=utils.get_root_helper())
         finally:
             f.close()
+
+    def list_images(self):
+        files = os.listdir(self.images_dir)
+        images = map(lambda x: x[:-len(self.name_suffix)], files)
+        return images
+
+    def delete_image(self, image_id):
+        os.unlink(self._get_cached_file(image_id))
 
 
 class ImageDownloader(object):

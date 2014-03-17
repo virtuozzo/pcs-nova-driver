@@ -13,10 +13,22 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from nova.openstack.common import log as logging
+
+LOG = logging.getLogger(__name__)
+
 
 class ImageCacheManager(object):
-    def __init__(self):
-        pass
+    def __init__(self, driver):
+        self.driver = driver
 
     def update(self, context, all_instances):
-        pass
+        LOG.info("ImageCacheManager.update")
+        used_images = map(lambda x: x['image_ref'], all_instances)
+        used_images = set(used_images)
+
+        cached_images = self.driver.image_cache.list_images()
+        for image in cached_images:
+            if image not in used_images:
+                LOG.info("ImageCacheManager: removing image %s" % image)
+                self.driver.image_cache.delete_image(image)

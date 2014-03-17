@@ -161,7 +161,7 @@ class PCSDriver(driver.ComputeDriver):
         if CONF.firewall_driver != "nova.virt.firewall.NoopFirewallDriver":
             raise NotImplementedError(firewall_msg)
         self.vif_driver = PCSVIFDriver()
-        self.image_cache_manager = imagecache.ImageCacheManager()
+        self.image_cache_manager = imagecache.ImageCacheManager(self)
         self.image_cache = template.LZRWImageCache()
         self.volume_drivers = driver.driver_dict_from_config(
                                 CONF.pcs_volume_drivers, self)
