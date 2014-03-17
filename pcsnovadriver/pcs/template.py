@@ -202,9 +202,8 @@ class DiskTemplate(PCSTemplate):
         LOG.info("Removing original disk ...")
         utils.execute('rm', '-rf', disk_path, run_as_root=True)
 
-        image = LZRWCachedImage()
-        image.put_image(self.context, self.instance['image_ref'],
-                        self.image_meta, disk_path)
+        self.driver.image_cache.put_image(self.context,
+                self.instance['image_ref'], self.image_meta, disk_path)
 
         LOG.info("Done")
         return sdk_ve
@@ -216,9 +215,8 @@ class DiskTemplate(PCSTemplate):
         ve_path = os.path.dirname(sdk_ve.get_home_path())
         disk_path = os.path.join(ve_path, "harddisk.hdd")
 
-        image = LZRWCachedImage()
-        image.put_image(self.context, self.instance['image_ref'],
-                        self.image_meta, disk_path)
+        self.driver.image_cache.put_image(self.context,
+                self.instance['image_ref'], self.image_meta, disk_path)
 
         # add hard disk to VM config and set is as boot device
         srv_cfg = self.driver.psrv.get_srv_config().wait().get_param()
@@ -248,7 +246,7 @@ class DiskTemplate(PCSTemplate):
             return self._create_ct()
 
 
-class CachedImage(object):
+class ImageCache(object):
     """Base class for image cache handlers. There is only one
     operation: put image to the specified destination. If image
     is not in cache - it should be downloaded.
@@ -257,7 +255,7 @@ class CachedImage(object):
         raise NotImplementedError()
 
 
-class LZRWCachedImage(CachedImage):
+class LZRWImageCache(ImageCache):
     """Class for retrieving from cache of LZRW images.
 
     There are 3 actions on cached image:
