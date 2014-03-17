@@ -172,21 +172,6 @@ class DiskTemplate(PCSTemplate):
         self.instance = instance
         self.image_meta = image_meta
 
-    def _is_image_cached(self):
-        "Returns True, if image with given id cached."
-
-        raise NotImplementedError()
-
-    def _cache_image(self, context):
-        "Cache image from glance to local FS."
-
-        raise NotImplementedError()
-
-    def _put_image(self, dst):
-        "Copy ploop image to the specified destination."
-
-        raise NotImplementedError()
-
     def _create_ct(self):
         sdk_ve = self.driver.psrv.get_default_vm_config(pc.PVT_CT,
                                             'vswap.1024MB', 0, 0).wait()[0]
