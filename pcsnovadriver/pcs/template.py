@@ -287,9 +287,24 @@ class LZRWImageCache(ImageCache):
     manage_image_cache can be called from several threads
     simultaneously.
     """
+
+    def __init__(self):
+        if not os.path.exists(CONF.pcs_template_dir):
+            utils.execute('mkdir', '-p', CONF.pcs_template_dir,
+                          run_as_root=True)
+            utils.execute('chown', 'nova:nova', CONF.pcs_template_dir,
+                          run_as_root=True)
+
+        self.images_dir = os.path.join(CONF.pcs_template_dir, 'images')
+        self.locks_dir = os.path.join(CONF.pcs_template_dir, 'locks')
+        self.tmp_dir = os.path.join(CONF.pcs_template_dir, 'tmp')
+
+        for d in self.images_dir, self.locks_dir, self.tmp_dir:
+            if not os.path.exists(d):
+                os.mkdir(d)
+
     def _get_cached_file(self, image_id):
-        return os.path.join(CONF.pcs_template_dir, 'images',
-                            image_id + '.tar.lzrw')
+        return os.path.join(self.images_dir, image_id + '.tar.lzrw')
 
     def _cache_image(self, context, image_ref, image_meta, dst):
         downloader = get_downloader(image_meta['disk_format'])
@@ -314,14 +329,12 @@ class LZRWImageCache(ImageCache):
         if f:
             return f
 
-        lock_path = os.path.join(CONF.pcs_template_dir, 'locks')
-        with lockutils.lock(image_id, external=True, lock_path=lock_path):
+        with lockutils.lock(image_id, external=True, lock_path=self.locks_dir):
             f = self._open(fpath)
             if f:
                 return f
 
-            temp_dir = os.path.join(CONF.pcs_template_dir, 'tmp')
-            tmp = tempfile.mktemp(dir=temp_dir)
+            tmp = tempfile.mktemp(dir=self.tmp_dir)
             self._cache_image(context, image_ref, image_meta, tmp)
             f = open(tmp)
             os.rename(tmp, fpath)
