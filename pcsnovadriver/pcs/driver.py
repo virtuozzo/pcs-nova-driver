@@ -440,7 +440,7 @@ class PCSDriver(driver.ComputeDriver):
 
     def spawn(self, context, instance, image_meta, injected_files,
             admin_password, network_info=None, block_device_info=None):
-        LOG.info("spawn: %s" % instance['name'])
+        LOG.info("spawn: %s" % (instance['name']))
 
         if instance['image_ref']:
             tmpl = template.get_template(self, context, instance, image_meta)
@@ -745,6 +745,34 @@ class PCSDriver(driver.ComputeDriver):
                     devices.append(self.get_disk_dev_path(dev))
         return devices
 
+    def attach_volume(self, context, connection_info, instance, mountpoint,
+                      encryption=None):
+        LOG.info("attach_volume %s" % instance['name'])
+        sdk_ve = self._get_ve_by_name(instance['name'])
+        if sdk_ve.get_vm_type() == pc.PVT_CT:
+            raise Exception("Can't attach volume to a container")
+
+        disk_info = {
+            'dev': mountpoint,
+            'mount_device': mountpoint}
+        hdd = self.volume_driver_method('connect_volume',
+                            connection_info, sdk_ve, disk_info)
+
+    def detach_volume(self, connection_info, instance, mountpoint,
+                      encryption=None):
+        LOG.info("detach_volume %s" % instance['name'])
+        sdk_ve = self._get_ve_by_name(instance['name'])
+        if sdk_ve.get_vm_type() == pc.PVT_CT:
+            raise Exception("Can't detach volume from a container")
+
+        if self._get_state(sdk_ve) != pc.VMS_STOPPED:
+            raise Exception("You can't detach volume from running VM")
+
+        disk_info = {
+            'dev': mountpoint,
+            'mount_device': mountpoint}
+        self.volume_driver_method('disconnect_volume',
+                            connection_info, sdk_ve, disk_info, True)
 
 class HostState(object):
     def __init__(self, driver):
