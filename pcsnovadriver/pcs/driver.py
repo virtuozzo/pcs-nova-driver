@@ -538,12 +538,12 @@ class PCSDriver(driver.ComputeDriver):
     def suspend(self, instance):
         LOG.info("suspend %s" % instance['name'])
         sdk_ve = self._get_ve_by_name(instance['name'])
-        sdk_ve.suspend().wait()
+        self._set_suspended_state(sdk_ve)
 
     def resume(self, instance, network_info, block_device_info=None):
         LOG.info("resume %s" % instance['name'])
         sdk_ve = self._get_ve_by_name(instance['name'])
-        sdk_ve.resume().wait()
+        self._set_started_state(sdk_ve)
         self._plug_vifs(instance, sdk_ve, network_info)
 
     def pause(self, instance):
@@ -551,25 +551,25 @@ class PCSDriver(driver.ComputeDriver):
         sdk_ve = self._get_ve_by_name(instance['name'])
         if sdk_ve.get_vm_type() != pc.PVT_VM:
             raise NotImplementedError()
-        sdk_ve.pause().wait()
+        self._set_paused_state(sdk_ve)
 
     def unpause(self, instance, network_info, block_device_info=None):
         LOG.info("resume %s" % instance['name'])
         sdk_ve = self._get_ve_by_name(instance['name'])
         if sdk_ve.get_vm_type() != pc.PVT_VM:
             raise NotImplementedError()
-        sdk_ve.resume().wait()
+        self._set_started_state(sdk_ve)
 
     def power_off(self, instance):
         LOG.info("power_off %s" % instance['name'])
         sdk_ve = self._get_ve_by_name(instance['name'])
-        sdk_ve.stop_ex(pc.PSM_ACPI, pc.PSF_FORCE).wait()
+        self._set_stopped_state(sdk_ve, kill=False)
 
     def power_on(self, context, instance, network_info,
                     block_device_info=None):
         LOG.info("power_on %s" % instance['name'])
         sdk_ve = self._get_ve_by_name(instance['name'])
-        sdk_ve.start().wait()
+        self._set_started_state(sdk_ve)
         self._unplug_vifs(instance, sdk_ve, network_info)
         self._plug_vifs(instance, sdk_ve, network_info)
 
