@@ -185,6 +185,7 @@ class PCSDriverTestCase(test.TestCase):
         self.conn.psrv.test_add_vms(vms)
         self.conn.psrv.test_set_host_info(HOST_INFO)
         self.conn.vif_driver = mock.MagicMock()
+        self.conn._inject_files = mock.MagicMock()
 
         self.user_id = 'fake'
         self.project_id = 'fake'

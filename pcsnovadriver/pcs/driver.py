@@ -24,11 +24,14 @@ from nova.compute import power_state
 from nova.compute import task_states
 from nova import exception
 from nova.image import glance
+from nova.openstack.common import excutils
 from nova.openstack.common.gettextutils import _
 from nova.openstack.common import jsonutils
 from nova.openstack.common import log as logging
 from nova import utils
+from nova.virt.disk import api as disk
 from nova.virt import driver
+from nova.virt import netutils
 
 from pcsnovadriver.pcs import imagecache
 from pcsnovadriver.pcs import prlsdkapi_proxy
@@ -68,6 +71,11 @@ pcs_opts = [
                     'pcsnovadriver.pcs.volume.PCSPStorageVolumeDriver',
                 ],
                 help='PCS handlers for remote volumes.'),
+    cfg.IntOpt('pcs_inject_partition',
+                default=-1,
+                help='The partition to inject to : '
+                     '-2 => disable, -1 => inspect (libguestfs only), '
+                     '0 => not partitioned, >0 => partition number'),
     ]
 
 CONF = cfg.CONF
@@ -429,6 +437,48 @@ class PCSDriver(driver.ComputeDriver):
 
         return sdk_ve
 
+    def _inject_files(self, sdk_ve, boot_hdd, instance, network_info=None,
+                    files=None, admin_pass=None):
+
+        disk_path = boot_hdd.get_sys_name()
+
+        target_partition = CONF.pcs_inject_partition
+        if target_partition == 0:
+            target_partition = None
+
+        key = str(instance['key_data'])
+        net = netutils.get_injected_network_template(network_info)
+        metadata = instance.get('metadata')
+
+        if any((key, net, metadata, admin_pass, files)):
+            # If we're not using config_drive, inject into root fs
+            LOG.info('Injecting files')
+            try:
+                img_id = instance['image_ref']
+                for inj, val in [('key', key),
+                                 ('net', net),
+                                 ('metadata', metadata),
+                                 ('admin_pass', admin_pass),
+                                 ('files', files)]:
+                    if val:
+                        LOG.info(_('Injecting %(inj)s into image '
+                                   '%(img_id)s'),
+                                 {'inj': inj, 'img_id': img_id},
+                                 instance=instance)
+                with pcsutils.PloopMount(disk_path, chown=True,
+                            root_helper=utils.get_root_helper()) as dev:
+                    disk.inject_data(dev, key, net, metadata,
+                                     admin_pass, files,
+                                     partition=target_partition,
+                                     use_cow=False,
+                                     mandatory=('files',))
+            except Exception as e:
+                with excutils.save_and_reraise_exception():
+                    LOG.error(_('Error injecting data into image '
+                                '%(img_id)s (%(e)s)'),
+                              {'img_id': img_id, 'e': e},
+                              instance=instance)
+
     def _set_boot_device(self, sdk_ve, hdd):
         sdk_ve.begin_edit().wait()
         b = sdk_ve.create_boot_dev()
@@ -442,9 +492,13 @@ class PCSDriver(driver.ComputeDriver):
             admin_password, network_info=None, block_device_info=None):
         LOG.info("spawn: %s" % (instance['name']))
 
+        boot_hdd = None
+        booted_from_volume = False
+
         if instance['image_ref']:
             tmpl = template.get_template(self, context, instance, image_meta)
             sdk_ve = tmpl.create_instance()
+            boot_hdd = sdk_ve.get_dev_by_type(pc.PDE_HARD_DISK, 0)
         else:
             sdk_ve = self._create_blank_vm(instance)
 
@@ -466,6 +520,21 @@ class PCSDriver(driver.ComputeDriver):
                                 connection_info, sdk_ve, disk_info)
             if instance['root_device_name'] == vol['mount_device']:
                 self._set_boot_device(sdk_ve, hdd)
+                boot_hdd = hdd
+                booted_from_volume = True
+
+        if not boot_hdd:
+            raise Exception("Boot disk is missing")
+
+        if CONF.pcs_inject_partition != -2:
+            if booted_from_volume:
+                LOG.warn(('File injection into a boot from volume'
+                          'instance is not supported'), instance=instance)
+            else:
+                self._inject_files(sdk_ve, boot_hdd, instance,
+                                   network_info=network_info,
+                                   files=injected_files,
+                                   admin_pass=admin_password)
 
         sdk_ve.start_ex(pc.PSM_VM_START, pc.PNSF_VM_START_WAIT).wait()
 
