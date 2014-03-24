@@ -191,3 +191,51 @@ class CPloopUploader(object):
             msg += ', %r returned %d' % (self.cmd2, ret2)
         if msg:
             raise Exception(msg)
+
+
+class PloopMount(object):
+    """This class is for mounting ploop devices using with statement:
+    with PloopMount('/parallels/my-vm/harddisk.hdd') as dev_path:
+        # do something
+
+    :param path: A path to parallels harddisk dir
+    :param chown: If true, chown device to nova:nova
+    :param root_helper: root_helper
+    """
+
+    def __init__(self, path, chown=False, root_helper=""):
+        self.path = path
+        self.root_helper = root_helper
+        self.chown = chown
+
+    def __enter__(self):
+        self.dd_path = os.path.join(self.path, 'DiskDescriptor.xml')
+        cmd = (shlex.split(self.root_helper) +
+               ['ploop', 'mount', self.dd_path])
+        ret, out = getstatusoutput(cmd)
+
+        if ret:
+            raise Exception("Can't mount ploop %s" % self.path)
+
+        ro = re.search('dev=(\S+)', out)
+        if not ro:
+            raise Exception('Invalid output from %r: %s' % (cmd, out))
+
+        self.ploop_dev = ro.group(1)
+
+        if self.chown:
+            cmd = (shlex.split(self.root_helper) +
+                   ['chown', 'nova:nova', self.ploop_dev])
+            ret, out = getstatusoutput(cmd)
+            if ret:
+                self._umount()
+                raise Exception("chown failed with code %d" % ret)
+
+        return self.ploop_dev
+
+    def _umount(self):
+        system_exc(shlex.split(self.root_helper) +
+                    ['ploop', 'umount', self.dd_path])
+
+    def __exit__(self, type, value, traceback):
+        self._umount()
