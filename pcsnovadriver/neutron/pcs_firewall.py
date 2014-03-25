@@ -48,15 +48,14 @@ def get_ovs_vif_ports(bridge, search_str):
         iface = {}
         for i in xrange(len(o['headings'])):
             if isinstance(if_row[i], types.ListType):
-                iface[o['headings'][i]] = if_row[i]
-            elif if_row[i][0] == 'set':
-                iface[o['headings'][i]] = if_row[i][1]
-            elif if_row[i][0] == 'map':
-                iface[o['headings'][i]] = dict(if_row[i][1])
-            elif if_row[i][0] == 'uuid':
-                iface[o['headings'][i]] = if_row[i][1]
+                if if_row[i][0] == 'set':
+                    iface[o['headings'][i]] = if_row[i][1]
+                elif if_row[i][0] == 'map':
+                    iface[o['headings'][i]] = dict(if_row[i][1])
+                elif if_row[i][0] == 'uuid':
+                    iface[o['headings'][i]] = if_row[i][1]
             else:
-                raise Exception("Unknown data: %r" % if_row[i])
+                iface[o['headings'][i]] = if_row[i]
         ifaces.append(iface)
     return ifaces
 
