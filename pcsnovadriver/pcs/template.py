@@ -150,7 +150,7 @@ class EzTemplate(PCSTemplate):
         else:
             return self._cmp_version(rel1, rel2)
 
-    def create_instance(self, psrv, instance):
+    def create_instance(self):
         sdk_ve = self.driver.psrv.get_default_vm_config(pc.PVT_CT,
                                             'vswap.1024MB', 0, 0).wait()[0]
         sdk_ve.set_uuid(self.instance['uuid'])
