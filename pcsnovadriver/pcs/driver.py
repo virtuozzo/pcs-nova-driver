@@ -432,7 +432,7 @@ class PCSDriver(driver.ComputeDriver):
     def _inject_files(self, sdk_ve, boot_hdd, instance, network_info=None,
                     files=None, admin_pass=None):
 
-        disk_path = boot_hdd.get_sys_name()
+        disk_path = boot_hdd.get_image_path()
 
         target_partition = CONF.pcs_inject_partition
         if target_partition == 0:
