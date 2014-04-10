@@ -344,20 +344,12 @@ class PCSDriver(driver.ComputeDriver):
             self.vif_driver.plug(self, instance, sdk_ve, vif)
 
     def plug_vifs(self, instance, network_info):
-        stopped_states = [power_state.NOSTATE,
-                          power_state.SHUTDOWN,
-                          power_state.CRASHED,
-                          power_state.SUSPENDED,
-                          power_state.PAUSED,
-                          ]
         LOG.info("plug_vifs: %s" % instance['name'])
         if not self.instance_exists(instance['name']):
             return
         sdk_ve = self._get_ve_by_name(instance['name'])
-        self._sync_ve_state(sdk_ve, instance)
-        if instance['power_state'] in stopped_states:
-            return
-        self._plug_vifs(instance, sdk_ve, network_info)
+        if self._get_state(sdk_ve) in [pc.VMS_RUNNING, pc.VMS_PAUSED]:
+            self._plug_vifs(instance, sdk_ve, network_info)
 
     def _unplug_vifs(self, instance, sdk_ve, network_info):
         for vif in network_info:
