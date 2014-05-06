@@ -850,6 +850,8 @@ class HostState(object):
 
         uinfo = self.driver.psrv.get_user_profile().wait()[0]
         vm_folder = uinfo.get_default_vm_folder()
+        if not vm_folder:
+            vm_folder = "/var/parallels"
         s = os.statvfs(vm_folder)
         fsinfo['total'] = s.f_frsize * s.f_blocks
         fsinfo['used'] = s.f_frsize * (s.f_blocks - s.f_bfree)
