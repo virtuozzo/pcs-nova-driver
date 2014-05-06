@@ -527,8 +527,8 @@ class PCSDriver(driver.ComputeDriver):
         self._plug_vifs(instance, sdk_ve, network_info)
         self._set_admin_password(sdk_ve, admin_password)
 
-    def destroy(self, instance, network_info, block_device_info=None,
-                destroy_disks=True, context=None):
+    def destroy(self, context, instance, network_info, block_device_info=None,
+                destroy_disks=True):
         LOG.info("destroy: %s" % instance['name'])
         try:
             sdk_ve = self._get_ve_by_name(instance['name'])
@@ -595,7 +595,7 @@ class PCSDriver(driver.ComputeDriver):
         sdk_ve = self._get_ve_by_name(instance['name'])
         self._set_suspended_state(sdk_ve)
 
-    def resume(self, instance, network_info, block_device_info=None):
+    def resume(self, resume, instance, network_info, block_device_info=None):
         LOG.info("resume %s" % instance['name'])
         sdk_ve = self._get_ve_by_name(instance['name'])
         self._set_started_state(sdk_ve)
@@ -628,7 +628,7 @@ class PCSDriver(driver.ComputeDriver):
         self._unplug_vifs(instance, sdk_ve, network_info)
         self._plug_vifs(instance, sdk_ve, network_info)
 
-    def get_vnc_console(self, instance):
+    def get_vnc_console(self, context, instance):
         LOG.info("get_vnc_console %s" % instance['name'])
         sdk_ve = self._get_ve_by_name(instance['name'])
 
