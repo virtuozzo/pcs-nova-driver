@@ -452,7 +452,7 @@ class PCSDriver(driver.ComputeDriver):
                                  {'inj': inj, 'img_id': img_id},
                                  instance=instance)
                 with pcsutils.PloopMount(disk_path, chown=True,
-                            root_helper=utils.get_root_helper()) as dev:
+                            root_helper=utils._get_root_helper()) as dev:
                     disk.inject_data(dev, key, net, metadata,
                                      admin_pass, files,
                                      partition=target_partition,
@@ -720,7 +720,7 @@ class PCSDriver(driver.ComputeDriver):
             LOG.info("Convert image %s to %s format ..." %
                      (image_id, disk_format))
             pcsutils.convert_image(hdd_path, dst, disk_format,
-                                   root_helper=utils.get_root_helper())
+                                   root_helper=utils._get_root_helper())
             with open(dst) as f:
                 upload(context, snapshot_image_service, image_id, metadata, f)
             os.unlink(dst)

@@ -335,7 +335,7 @@ class LZRWImageCache(ImageCache):
             LOG.info("Unpacking image %s to %s" %
                     (self._get_cached_file(image_meta['id']), dst))
             pcsutils.uncompress_ploop(None, dst, src_file=f,
-                                  root_helper=utils.get_root_helper())
+                                  root_helper=utils._get_root_helper())
         finally:
             f.close()
 
