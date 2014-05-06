@@ -360,14 +360,8 @@ class PCSDriver(driver.ComputeDriver):
         sdk_ve = self._get_ve_by_name(instance['name'])
         self._unplug_vifs(instance, sdk_ve, network_info)
 
-    def _format_system_metadata(self, instance):
-        res = {}
-        for d in instance['system_metadata']:
-            res[d['key']] = d['value']
-        return res
-
     def _apply_flavor(self, instance, sdk_ve, resize_root_disk):
-        metadata = self._format_system_metadata(instance)
+        metadata = instance.system_metadata
         sdk_ve.begin_edit().wait()
 
         sdk_ve.set_cpu_count(int(metadata['instance_type_vcpus']))
