@@ -21,6 +21,7 @@ from nova.compute import flavors
 from nova.compute import power_state
 from nova import context
 from nova import db
+from nova.objects import instance as instance_obj
 from nova.openstack.common import uuidutils
 from nova import test
 from nova.virt import fake
@@ -209,7 +210,9 @@ class PCSDriverTestCase(test.TestCase):
         for key, val in kwargs.items():
             instance_ref[key] = val
 
-        return db.instance_create(self.context, instance_ref)
+        instance = instance_obj.Instance(self.context, **instance_ref)
+        instance.create()
+        return instance
 
     def _prep_instance_boot_image(self, **kwargs):
         instance_ref = {}
@@ -382,14 +385,15 @@ class PCSDriverTestCase(test.TestCase):
 
         self.conn.get_disk_dev_path = mock.MagicMock()
 
-        self.conn.destroy(instance, network_info_1vif, block_device_info1)
+        self.conn.destroy(self.context, instance,
+                          network_info_1vif, block_device_info1)
 
         job = srv.get_vm_config(instance['name'], pc.PGVC_SEARCH_BY_NAME)
         self.assertRaises(fakeprlsdkapi.PrlSDKError, job.wait)
 
     def test_destroy_unexistent(self):
         instance = self._prep_instance_boot_image()
-        self.conn.destroy(instance, network_info_1vif, None)
+        self.conn.destroy(self.context, instance, network_info_1vif, None)
 
     def test_reboot_soft(self):
         instance, sdk_ve = self._prep_instance_and_vm(
@@ -424,7 +428,7 @@ class PCSDriverTestCase(test.TestCase):
         instance, sdk_ve = self._prep_instance_and_vm(
                                 power_state=power_state.SUSPENDED)
 
-        self.conn.resume(instance, network_info_1vif)
+        self.conn.resume(self.context, instance, network_info_1vif)
 
         self.assertEqual(sdk_ve.state, pc.VMS_RUNNING)
 
