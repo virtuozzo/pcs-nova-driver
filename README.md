@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/Parallels/pcs-nova-driver.png?branch=master)](https://travis-ci.org/Parallels/pcs-nova-driver)
+[![Build Status](https://travis-ci.org/CloudServer/pcs-nova-driver.png?branch=master)](https://travis-ci.org/Parallels/pcs-nova-driver)
 
 This is OpenStack Nova driver for Parallels Cloud Server boxes. This code
 represents the internal development branch of the Parallels engineering
