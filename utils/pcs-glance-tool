@@ -85,10 +85,10 @@ class PCSImagesShell(OpenStackImagesShell):
                help=('Minimum amount of ram needed to '
                      'boot image (in megabytes).'))
     @utils.arg('--is-public', metavar='{True,False}',
-               type=utils.string_to_bool,
+               type=strutils.bool_from_string,
                help='Make image accessible to the public.')
     @utils.arg('--is-protected', metavar='{True,False}',
-               type=utils.string_to_bool,
+               type=strutils.bool_from_string,
                help='Prevent image from being deleted.')
     @utils.arg('--prl-login', metavar='<LOGIN>', help='')
     @utils.arg('--prl-passwd', metavar='<PASSWORD>', help='')
