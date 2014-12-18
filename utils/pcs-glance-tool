@@ -150,7 +150,7 @@ class PCSImagesShell(OpenStackImagesShell):
                     desc = f.read()
 
                 # Glance API v1 doesn't support line breaks
-                extra_fields['pcs_disk_descriptor'] = desc.replace('\n', '')
+                extra_fields['disk_descriptor'] = desc.replace('\n', '')
             elif args.disk_format == 'cploop':
                 upload_compressed_ploop(gc, image.id, hdd_path)
             else:
